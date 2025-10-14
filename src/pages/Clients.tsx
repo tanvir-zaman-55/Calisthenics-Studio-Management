@@ -93,6 +93,7 @@ const Clients = () => {
   const { isSuperAdmin, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
+  const [isAddClientDialogOpen, setIsAddClientDialogOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<any>(null);
   const [selectedWorkout, setSelectedWorkout] = useState("");
 
@@ -114,6 +115,12 @@ const Clients = () => {
     setSelectedClient(null);
   };
 
+  const handleAddClient = (e: React.FormEvent) => {
+    e.preventDefault();
+    console.log("Adding new client");
+    setIsAddClientDialogOpen(false);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -127,10 +134,61 @@ const Clients = () => {
           </p>
         </div>
         {isAdmin && (
-          <Button>
-            <UserPlus className="h-4 w-4 mr-2" />
-            Add Client
-          </Button>
+          <Dialog
+            open={isAddClientDialogOpen}
+            onOpenChange={setIsAddClientDialogOpen}
+          >
+            <DialogTrigger asChild>
+              <Button>
+                <UserPlus className="h-4 w-4 mr-2" />
+                Add Client
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle>Add New Client</DialogTitle>
+                <DialogDescription>
+                  Create a new trainee account
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleAddClient}>
+                <div className="space-y-4 pt-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Full Name</Label>
+                    <Input id="name" placeholder="John Doe" required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="john@example.com"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="phone">Phone Number</Label>
+                    <Input
+                      id="phone"
+                      type="tel"
+                      placeholder="+880 1234 567890"
+                      required
+                    />
+                  </div>
+                </div>
+                <DialogFooter className="mt-6">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsAddClientDialogOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit">Add Client</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
         )}
       </div>
 
@@ -224,14 +282,15 @@ const Clients = () => {
             {mockClients.map((client) => (
               <div
                 key={client.id}
-                className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent transition-colors"
+                className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent transition-colors cursor-pointer group"
+                onClick={() => navigate(`/clients/${client.id}`)}
               >
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 flex-1">
                   <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
                     <Users className="h-5 w-5 text-primary" />
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-medium">{client.name}</h3>
                       <Badge
                         variant={
@@ -241,7 +300,7 @@ const Clients = () => {
                         {client.status}
                       </Badge>
                     </div>
-                    <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground flex-wrap">
                       <span className="flex items-center gap-1">
                         <Mail className="h-3 w-3" />
                         {client.email}
@@ -255,23 +314,101 @@ const Clients = () => {
                 </div>
 
                 <div className="flex items-center gap-4">
-                  <div className="text-right">
+                  <div className="text-center hidden sm:block">
+                    <div className="text-sm font-medium">{client.classes}</div>
+                    <div className="text-xs text-muted-foreground">classes</div>
+                  </div>
+                  <div className="text-right hidden md:block">
+                    <div className="text-xs text-muted-foreground">Joined</div>
                     <div className="text-sm font-medium">
-                      {client.classes} classes
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Joined {new Date(client.joinDate).toLocaleDateString()}
+                      {new Date(client.joinDate).toLocaleDateString()}
                     </div>
                   </div>
-                  <Button variant="ghost" size="icon">
-                    <MoreVertical className="h-4 w-4" />
-                  </Button>
+                  {isAdmin && (
+                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedClient(client);
+                          setIsAssignDialogOpen(true);
+                        }}
+                      >
+                        <Dumbbell className="h-3 w-3 mr-1" />
+                        Assign
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/clients/${client.id}`);
+                        }}
+                      >
+                        <Eye className="h-3 w-3 mr-1" />
+                        View
+                      </Button>
+                    </div>
+                  )}
+                  {!isAdmin && (
+                    <Button variant="ghost" size="icon">
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         </CardContent>
       </Card>
+
+      {/* Assign Workout Dialog */}
+      <Dialog open={isAssignDialogOpen} onOpenChange={setIsAssignDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Assign Workout to {selectedClient?.name}</DialogTitle>
+            <DialogDescription>
+              Quickly assign a workout template to this trainee
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div className="space-y-2">
+              <Label>Workout Template</Label>
+              <Select
+                value={selectedWorkout}
+                onValueChange={setSelectedWorkout}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select workout" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableWorkouts.map((workout) => (
+                    <SelectItem key={workout.id} value={workout.id}>
+                      {workout.name} ({workout.type})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsAssignDialogOpen(false);
+                setSelectedClient(null);
+                setSelectedWorkout("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleAssignWorkout} disabled={!selectedWorkout}>
+              Assign Workout
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Super Admin Only Section */}
       {isSuperAdmin && (

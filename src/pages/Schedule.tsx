@@ -11,6 +11,24 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/context/AuthContext";
 import {
   Calendar as CalendarIcon,
@@ -136,6 +154,7 @@ const Schedule = () => {
   const { isSuperAdmin, isAdmin, isTrainee, currentUser } = useAuth();
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [selectedDay, setSelectedDay] = useState("Monday");
+  const [isAddSessionDialogOpen, setIsAddSessionDialogOpen] = useState(false);
 
   const days = [
     "Monday",
@@ -177,10 +196,94 @@ const Schedule = () => {
           </p>
         </div>
         {isAdmin && (
-          <Button>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Session
-          </Button>
+          <Dialog
+            open={isAddSessionDialogOpen}
+            onOpenChange={setIsAddSessionDialogOpen}
+          >
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Session
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle>Add New Session</DialogTitle>
+                <DialogDescription>
+                  Create a new class session
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 pt-4">
+                <div className="space-y-2">
+                  <Label htmlFor="class-name">Class Name</Label>
+                  <Input
+                    id="class-name"
+                    placeholder="e.g., Core Fundamentals"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="class-type">Type</Label>
+                    <Select>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="core">Core</SelectItem>
+                        <SelectItem value="upper">Upper Body</SelectItem>
+                        <SelectItem value="legs">Legs</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="time">Time</Label>
+                    <Input id="time" type="time" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="location">Location</Label>
+                    <Input id="location" placeholder="Studio A" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="capacity">Capacity</Label>
+                    <Input id="capacity" type="number" placeholder="15" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="day">Day</Label>
+                  <Select>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select day" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {days.map((day) => (
+                        <SelectItem key={day} value={day.toLowerCase()}>
+                          {day}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsAddSessionDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    console.log("Adding session");
+                    setIsAddSessionDialogOpen(false);
+                  }}
+                >
+                  Add Session
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         )}
       </div>
 
