@@ -1,3 +1,5 @@
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Card,
   CardContent,
@@ -8,15 +10,34 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/context/AuthContext";
 import {
   Users,
   Search,
   UserPlus,
   Filter,
-  MoreVertical,
   Mail,
   Phone,
+  ArrowRight,
+  Dumbbell,
+  Eye,
 } from "lucide-react";
 
 // Mock client data
@@ -70,6 +91,28 @@ const mockClients = [
 
 const Clients = () => {
   const { isSuperAdmin, isAdmin } = useAuth();
+  const navigate = useNavigate();
+  const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
+  const [selectedClient, setSelectedClient] = useState<any>(null);
+  const [selectedWorkout, setSelectedWorkout] = useState("");
+
+  const availableWorkouts = [
+    { id: "t1", name: "Beginner Core Fundamentals", type: "Core" },
+    { id: "t2", name: "Upper Body Power", type: "Upper Body" },
+    { id: "t3", name: "Leg Day Intense", type: "Legs" },
+  ];
+
+  const handleAssignWorkout = () => {
+    console.log(
+      "Assigning workout:",
+      selectedWorkout,
+      "to client:",
+      selectedClient?.id
+    );
+    setIsAssignDialogOpen(false);
+    setSelectedWorkout("");
+    setSelectedClient(null);
+  };
 
   return (
     <div className="space-y-6">
