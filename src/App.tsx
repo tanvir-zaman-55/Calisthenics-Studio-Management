@@ -13,6 +13,7 @@ import Classes from "./pages/Classes";
 import Schedule from "./pages/Schedule";
 import Admins from "./pages/Admins";
 import Workouts from "./pages/Workouts";
+import Settings from "./pages/Settings";
 import { AuthProvider } from "./context/AuthContext";
 
 const queryClient = new QueryClient();
@@ -39,6 +40,7 @@ const App = () => (
               <Route path="/classes" element={<Classes />} />
               <Route path="/schedule" element={<Schedule />} />
               <Route path="/admins" element={<Admins />} />
+              <Route path="/settings" element={<Settings />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -11,411 +11,605 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
-  Calendar,
-  CheckCircle2,
-  Circle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Play,
   Clock,
   Target,
   TrendingUp,
-  Zap,
+  Calendar,
+  CheckCircle2,
+  Circle,
   Flame,
   Award,
+  Dumbbell,
+  AlertCircle,
 } from "lucide-react";
 
-// Mock assigned workouts for trainee
-const mockAssignedWorkouts = {
-  today: [
-    {
-      id: "1",
-      name: "Core Fundamentals",
-      type: "Core",
-      exercises: [
-        {
-          id: "e1",
-          name: "Plank Hold",
-          sets: 3,
-          reps: "30 sec",
-          completed: true,
-        },
-        {
-          id: "e2",
-          name: "Hollow Body",
-          sets: 3,
-          reps: "20 sec",
-          completed: true,
-        },
-        { id: "e3", name: "Dead Bug", sets: 3, reps: "10", completed: false },
-        {
-          id: "e4",
-          name: "L-Sit Hold",
-          sets: 3,
-          reps: "15 sec",
-          completed: false,
-        },
-      ],
-      duration: "30 min",
-      completed: 2,
-      total: 4,
-    },
-  ],
-  upcoming: [
-    {
-      id: "2",
-      name: "Upper Body Power",
-      type: "Upper Body",
-      date: "Tomorrow",
-      exercises: 6,
-      duration: "45 min",
-    },
-    {
-      id: "3",
-      name: "Leg Day",
-      type: "Legs",
-      date: "Friday",
-      exercises: 5,
-      duration: "40 min",
-    },
-  ],
-  completed: [
-    {
-      id: "4",
-      name: "Core Session",
-      type: "Core",
-      date: "Yesterday",
-      completionRate: 100,
-    },
-    {
-      id: "5",
-      name: "Upper Body",
-      type: "Upper Body",
-      date: "2 days ago",
-      completionRate: 85,
-    },
-  ],
-};
+interface Exercise {
+  id: string;
+  name: string;
+  category: string;
+  difficulty: string;
+  primaryMuscles: string[];
+  equipment: string;
+  description: string;
+  videoUrl?: string;
+}
 
-const TraineeWorkouts = () => {
-  const [selectedTab, setSelectedTab] = useState("today");
+interface WorkoutExercise {
+  exerciseId: string;
+  sets: number;
+  reps: string;
+  rest: number;
+  notes?: string;
+}
 
-  const typeColors = {
-    Core: "bg-orange-500",
-    "Upper Body": "bg-cyan-500",
-    Legs: "bg-pink-500",
+interface WorkoutTemplate {
+  id: string;
+  name: string;
+  description: string;
+  difficulty: string;
+  duration: number;
+  exercises: WorkoutExercise[];
+  createdAt: string;
+}
+
+interface WorkoutLog {
+  id: string;
+  workoutId: string;
+  date: string;
+  completedExercises: string[];
+  notes: string;
+  duration: number;
+}
+
+export default function TraineeWorkouts() {
+  const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [workoutTemplates, setWorkoutTemplates] = useState<WorkoutTemplate[]>(
+    []
+  );
+  const [workoutLogs, setWorkoutLogs] = useState<WorkoutLog[]>([]);
+  const [currentWorkout, setCurrentWorkout] = useState<WorkoutTemplate | null>(
+    null
+  );
+  const [isWorkoutActive, setIsWorkoutActive] = useState(false);
+  const [completedExercises, setCompletedExercises] = useState<Set<string>>(
+    new Set()
+  );
+  const [workoutNotes, setWorkoutNotes] = useState("");
+  const [workoutStartTime, setWorkoutStartTime] = useState<number | null>(null);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = () => {
+    try {
+      const storedExercises = localStorage.getItem("exercises");
+      const storedTemplates = localStorage.getItem("workoutTemplates");
+      const storedLogs = localStorage.getItem("workoutLogs");
+
+      if (storedExercises) {
+        setExercises(JSON.parse(storedExercises));
+      }
+
+      if (storedTemplates) {
+        const templates = JSON.parse(storedTemplates);
+        setWorkoutTemplates(templates);
+
+        // Set the first template as current workout if available
+        if (templates.length > 0 && !currentWorkout) {
+          setCurrentWorkout(templates[0]);
+        }
+      }
+
+      if (storedLogs) {
+        setWorkoutLogs(JSON.parse(storedLogs));
+      }
+    } catch (error) {
+      console.error("Error loading data:", error);
+    }
   };
 
-  return (
-    <div className="space-y-6">
-      {/* Stats Overview */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card className="bg-gradient-to-br from-orange-500/10 to-orange-500/5 border-orange-500/20">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Current Streak
-            </CardTitle>
-            <Flame className="h-4 w-4 text-orange-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">12 days</div>
-            <p className="text-xs text-muted-foreground mt-1">Keep it up! 🔥</p>
-          </CardContent>
-        </Card>
+  const getExerciseById = (id: string): Exercise | undefined => {
+    return exercises.find((ex) => ex.id === id);
+  };
 
+  const startWorkout = (template: WorkoutTemplate) => {
+    setCurrentWorkout(template);
+    setIsWorkoutActive(true);
+    setCompletedExercises(new Set());
+    setWorkoutNotes("");
+    setWorkoutStartTime(Date.now());
+  };
+
+  const toggleExerciseCompletion = (exerciseId: string) => {
+    const newCompleted = new Set(completedExercises);
+    if (newCompleted.has(exerciseId)) {
+      newCompleted.delete(exerciseId);
+    } else {
+      newCompleted.add(exerciseId);
+    }
+    setCompletedExercises(newCompleted);
+  };
+
+  const completeWorkout = () => {
+    if (!currentWorkout || !workoutStartTime) return;
+
+    const duration = Math.floor((Date.now() - workoutStartTime) / 1000 / 60); // minutes
+
+    const newLog: WorkoutLog = {
+      id: Date.now().toString(),
+      workoutId: currentWorkout.id,
+      date: new Date().toISOString(),
+      completedExercises: Array.from(completedExercises),
+      notes: workoutNotes,
+      duration,
+    };
+
+    const updatedLogs = [...workoutLogs, newLog];
+    setWorkoutLogs(updatedLogs);
+    localStorage.setItem("workoutLogs", JSON.stringify(updatedLogs));
+
+    setIsWorkoutActive(false);
+    setCompletedExercises(new Set());
+    setWorkoutNotes("");
+    setWorkoutStartTime(null);
+  };
+
+  const calculateProgress = () => {
+    if (!currentWorkout) return 0;
+    const total = currentWorkout.exercises.length;
+    const completed = completedExercises.size;
+    return total > 0 ? (completed / total) * 100 : 0;
+  };
+
+  const getRecentWorkouts = () => {
+    return workoutLogs
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 5);
+  };
+
+  const getTodaysWorkout = (): WorkoutTemplate | null => {
+    // Simple logic: return the first available template
+    // In a real app, this would be based on a schedule
+    return workoutTemplates.length > 0 ? workoutTemplates[0] : null;
+  };
+
+  const getWeeklyStats = () => {
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+
+    const weeklyLogs = workoutLogs.filter(
+      (log) => new Date(log.date) >= oneWeekAgo
+    );
+
+    return {
+      workoutsCompleted: weeklyLogs.length,
+      totalMinutes: weeklyLogs.reduce((sum, log) => sum + log.duration, 0),
+      averageCompletion:
+        weeklyLogs.length > 0
+          ? Math.round(
+              weeklyLogs.reduce((sum, log) => {
+                const workout = workoutTemplates.find(
+                  (w) => w.id === log.workoutId
+                );
+                if (!workout) return sum;
+                return (
+                  sum +
+                  (log.completedExercises.length / workout.exercises.length) *
+                    100
+                );
+              }, 0) / weeklyLogs.length
+            )
+          : 0,
+    };
+  };
+
+  if (exercises.length === 0 && workoutTemplates.length === 0) {
+    return (
+      <div className="p-6">
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            No workouts available yet. Your trainer will assign workouts to you
+            soon. Please contact your admin if you think this is an error.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  const todaysWorkout = getTodaysWorkout();
+  const weeklyStats = getWeeklyStats();
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-bold">My Workouts</h1>
+        <p className="text-muted-foreground">
+          Track your progress and complete your training
+        </p>
+      </div>
+
+      {/* Weekly Stats */}
+      <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">This Week</CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">
+              Workouts This Week
+            </CardTitle>
+            <Dumbbell className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">5 / 5</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Workouts completed
+            <div className="text-2xl font-bold">
+              {weeklyStats.workoutsCompleted}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Keep up the momentum!
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Time</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Minutes</CardTitle>
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">3.5 hrs</div>
-            <p className="text-xs text-muted-foreground mt-1">This week</p>
+            <div className="text-2xl font-bold">{weeklyStats.totalMinutes}</div>
+            <p className="text-xs text-muted-foreground">
+              Time invested in training
+            </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Completion</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">
+              Avg Completion
+            </CardTitle>
+            <Target className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">92%</div>
-            <p className="text-xs text-muted-foreground mt-1">Average rate</p>
+            <div className="text-2xl font-bold">
+              {weeklyStats.averageCompletion}%
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Exercise completion rate
+            </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Main Workout Content */}
-      <Tabs value={selectedTab} onValueChange={setSelectedTab}>
-        <TabsList className="grid w-full max-w-md grid-cols-3">
-          <TabsTrigger value="today">Today</TabsTrigger>
-          <TabsTrigger value="upcoming">Upcoming</TabsTrigger>
-          <TabsTrigger value="completed">History</TabsTrigger>
+      <Tabs defaultValue="today" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="today">Today's Workout</TabsTrigger>
+          <TabsTrigger value="all">All Programs</TabsTrigger>
+          <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
 
-        {/* Today's Workout */}
+        {/* Today's Workout Tab */}
         <TabsContent value="today" className="space-y-4">
-          {mockAssignedWorkouts.today.map((workout) => (
-            <Card key={workout.id}>
+          {isWorkoutActive && currentWorkout ? (
+            <Card>
               <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <div
-                        className={`h-2 w-2 rounded-full ${
-                          typeColors[workout.type as keyof typeof typeColors]
-                        }`}
-                      />
-                      <CardTitle>{workout.name}</CardTitle>
-                    </div>
-                    <CardDescription>
-                      {workout.duration} • {workout.exercises.length} exercises
-                    </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Play className="h-5 w-5 text-green-500" />
+                      Workout in Progress
+                    </CardTitle>
+                    <CardDescription>{currentWorkout.name}</CardDescription>
                   </div>
-                  <Badge
-                    variant={
-                      workout.completed === workout.total
-                        ? "default"
-                        : "secondary"
-                    }
-                  >
-                    {workout.completed}/{workout.total} completed
+                  <Badge variant="outline" className="text-green-500">
+                    <Circle className="h-2 w-2 fill-current mr-1" />
+                    Active
                   </Badge>
                 </div>
-                <div className="mt-4">
-                  <Progress
-                    value={(workout.completed / workout.total) * 100}
-                    className="h-2"
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <div className="flex justify-between text-sm mb-2">
+                    <span>Progress</span>
+                    <span>
+                      {completedExercises.size} /{" "}
+                      {currentWorkout.exercises.length} exercises
+                    </span>
+                  </div>
+                  <Progress value={calculateProgress()} />
+                </div>
+
+                <div className="space-y-3">
+                  {currentWorkout.exercises.map((workoutEx, index) => {
+                    const exercise = getExerciseById(workoutEx.exerciseId);
+                    if (!exercise) return null;
+
+                    const isCompleted = completedExercises.has(exercise.id);
+
+                    return (
+                      <Card
+                        key={exercise.id}
+                        className={isCompleted ? "bg-muted/50" : ""}
+                      >
+                        <CardContent className="p-4">
+                          <div className="flex items-start gap-3">
+                            <Checkbox
+                              checked={isCompleted}
+                              onCheckedChange={() =>
+                                toggleExerciseCompletion(exercise.id)
+                              }
+                              className="mt-1"
+                            />
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-medium">
+                                  {exercise.name}
+                                </span>
+                                <Badge variant="secondary" className="text-xs">
+                                  {exercise.difficulty}
+                                </Badge>
+                              </div>
+                              <div className="text-sm text-muted-foreground space-y-1">
+                                <div>
+                                  {workoutEx.sets} sets × {workoutEx.reps} reps
+                                </div>
+                                <div>Rest: {workoutEx.rest}s</div>
+                                {workoutEx.notes && (
+                                  <div className="text-xs italic">
+                                    {workoutEx.notes}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Workout Notes</label>
+                  <Textarea
+                    placeholder="How did the workout feel? Any notes for next time..."
+                    value={workoutNotes}
+                    onChange={(e) => setWorkoutNotes(e.target.value)}
+                    rows={3}
                   />
                 </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {workout.exercises.map((exercise) => (
-                    <div
-                      key={exercise.id}
-                      className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
-                        exercise.completed
-                          ? "bg-accent/50 border-primary/20"
-                          : "hover:bg-accent"
-                      }`}
-                    >
-                      <Checkbox
-                        checked={exercise.completed}
-                        className="h-5 w-5"
-                      />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`font-medium ${
-                              exercise.completed
-                                ? "line-through text-muted-foreground"
-                                : ""
-                            }`}
-                          >
-                            {exercise.name}
-                          </span>
-                          {exercise.completed && (
-                            <CheckCircle2 className="h-4 w-4 text-primary" />
-                          )}
-                        </div>
-                        <div className="text-sm text-muted-foreground mt-1">
-                          {exercise.sets} sets × {exercise.reps}
-                        </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={completeWorkout}
+                    className="flex-1"
+                    disabled={completedExercises.size === 0}
+                  >
+                    <CheckCircle2 className="h-4 w-4 mr-2" />
+                    Complete Workout
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setIsWorkoutActive(false);
+                      setCompletedExercises(new Set());
+                      setWorkoutStartTime(null);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              {todaysWorkout ? (
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-5 w-5" />
+                      <CardTitle>Today's Workout</CardTitle>
+                    </div>
+                    <CardDescription>
+                      {todaysWorkout.description}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center gap-4 text-sm">
+                      <div className="flex items-center gap-1">
+                        <Clock className="h-4 w-4" />
+                        <span>{todaysWorkout.duration} min</span>
+                      </div>
+                      <Badge>{todaysWorkout.difficulty}</Badge>
+                      <Badge variant="outline">
+                        {todaysWorkout.exercises.length} exercises
+                      </Badge>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="font-medium text-sm">Exercises:</div>
+                      <div className="space-y-1">
+                        {todaysWorkout.exercises
+                          .slice(0, 3)
+                          .map((workoutEx) => {
+                            const exercise = getExerciseById(
+                              workoutEx.exerciseId
+                            );
+                            if (!exercise) return null;
+                            return (
+                              <div
+                                key={exercise.id}
+                                className="text-sm text-muted-foreground"
+                              >
+                                • {exercise.name} - {workoutEx.sets}×
+                                {workoutEx.reps}
+                              </div>
+                            );
+                          })}
+                        {todaysWorkout.exercises.length > 3 && (
+                          <div className="text-sm text-muted-foreground">
+                            + {todaysWorkout.exercises.length - 3} more
+                            exercises
+                          </div>
+                        )}
                       </div>
                     </div>
-                  ))}
-                </div>
 
-                {workout.completed === workout.total ? (
-                  <Button className="w-full mt-4" variant="outline" disabled>
-                    <CheckCircle2 className="h-4 w-4 mr-2" />
-                    Workout Completed!
-                  </Button>
-                ) : (
-                  <Button className="w-full mt-4">
-                    <Zap className="h-4 w-4 mr-2" />
-                    Start Workout
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-
-          {/* Motivation Card */}
-          <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="h-12 w-12 rounded-full bg-primary/20 flex items-center justify-center">
-                  <Award className="h-6 w-6 text-primary" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold mb-1">You're on fire! 🔥</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Complete today's workout to maintain your 12-day streak
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+                    <Button
+                      onClick={() => startWorkout(todaysWorkout)}
+                      className="w-full"
+                      size="lg"
+                    >
+                      <Play className="h-4 w-4 mr-2" />
+                      Start Workout
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    No workout scheduled for today. Check your program or
+                    contact your trainer.
+                  </AlertDescription>
+                </Alert>
+              )}
+            </>
+          )}
         </TabsContent>
 
-        {/* Upcoming Workouts */}
-        <TabsContent value="upcoming" className="space-y-3">
-          {mockAssignedWorkouts.upcoming.map((workout) => (
-            <Card
-              key={workout.id}
-              className="hover:shadow-md transition-shadow"
-            >
-              <CardContent className="pt-6">
-                <div className="flex items-start gap-4">
-                  <div
-                    className={`h-12 w-12 rounded-lg flex items-center justify-center ${
-                      typeColors[workout.type as keyof typeof typeColors]
-                    }/10`}
+        {/* All Programs Tab */}
+        <TabsContent value="all" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            {workoutTemplates.map((template) => (
+              <Card key={template.id}>
+                <CardHeader>
+                  <CardTitle>{template.name}</CardTitle>
+                  <CardDescription>{template.description}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center gap-4 text-sm">
+                    <div className="flex items-center gap-1">
+                      <Clock className="h-4 w-4" />
+                      <span>{template.duration} min</span>
+                    </div>
+                    <Badge>{template.difficulty}</Badge>
+                    <Badge variant="outline">
+                      {template.exercises.length} exercises
+                    </Badge>
+                  </div>
+
+                  <Button
+                    onClick={() => startWorkout(template)}
+                    className="w-full"
+                    variant={
+                      currentWorkout?.id === template.id ? "default" : "outline"
+                    }
+                    disabled={isWorkoutActive}
                   >
-                    <Target
-                      className={`h-6 w-6 ${
-                        typeColors[workout.type as keyof typeof typeColors]
-                      } opacity-70`}
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-semibold mb-1">{workout.name}</h3>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        {workout.date}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        {workout.duration}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Target className="h-3 w-3" />
-                        {workout.exercises} exercises
-                      </span>
-                    </div>
-                  </div>
-                  <Button variant="outline" size="sm">
-                    Preview
+                    <Play className="h-4 w-4 mr-2" />
+                    {isWorkoutActive
+                      ? "Finish current workout first"
+                      : "Start Workout"}
                   </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {workoutTemplates.length === 0 && (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                No workout programs available. Your trainer will assign programs
+                soon.
+              </AlertDescription>
+            </Alert>
+          )}
         </TabsContent>
 
-        {/* Completed Workouts */}
-        <TabsContent value="completed" className="space-y-3">
-          {mockAssignedWorkouts.completed.map((workout) => (
-            <Card
-              key={workout.id}
-              className="hover:shadow-md transition-shadow"
-            >
-              <CardContent className="pt-6">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-4 flex-1">
-                    <div className="h-12 w-12 rounded-lg bg-green-500/10 flex items-center justify-center">
-                      <CheckCircle2 className="h-6 w-6 text-green-500" />
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="font-semibold mb-1">{workout.name}</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {workout.date}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold">
-                      {workout.completionRate}%
-                    </div>
-                    <p className="text-xs text-muted-foreground">Completion</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+        {/* History Tab */}
+        <TabsContent value="history" className="space-y-4">
+          {getRecentWorkouts().length > 0 ? (
+            <div className="space-y-3">
+              {getRecentWorkouts().map((log) => {
+                const workout = workoutTemplates.find(
+                  (w) => w.id === log.workoutId
+                );
+                if (!workout) return null;
+
+                const completionRate = Math.round(
+                  (log.completedExercises.length / workout.exercises.length) *
+                    100
+                );
+
+                return (
+                  <Card key={log.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1">
+                          <div className="font-medium">{workout.name}</div>
+                          <div className="text-sm text-muted-foreground">
+                            {new Date(log.date).toLocaleDateString("en-US", {
+                              weekday: "short",
+                              year: "numeric",
+                              month: "short",
+                              day: "numeric",
+                            })}
+                          </div>
+                          <div className="flex items-center gap-3 text-sm">
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {log.duration} min
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Target className="h-3 w-3" />
+                              {completionRate}% complete
+                            </span>
+                          </div>
+                          {log.notes && (
+                            <p className="text-sm text-muted-foreground italic mt-2">
+                              "{log.notes}"
+                            </p>
+                          )}
+                        </div>
+                        <Badge
+                          variant={
+                            completionRate === 100 ? "default" : "secondary"
+                          }
+                        >
+                          {log.completedExercises.length}/
+                          {workout.exercises.length}
+                        </Badge>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          ) : (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                No workout history yet. Complete your first workout to see it
+                here!
+              </AlertDescription>
+            </Alert>
+          )}
         </TabsContent>
       </Tabs>
-
-      {/* Weekly Progress */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Weekly Progress</CardTitle>
-          <CardDescription>Your training consistency this week</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Mon</span>
-              <div className="flex items-center gap-2">
-                <div className="h-2 w-32 bg-secondary rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-green-500"
-                    style={{ width: "100%" }}
-                  />
-                </div>
-                <CheckCircle2 className="h-4 w-4 text-green-500" />
-              </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Tue</span>
-              <div className="flex items-center gap-2">
-                <div className="h-2 w-32 bg-secondary rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-green-500"
-                    style={{ width: "100%" }}
-                  />
-                </div>
-                <CheckCircle2 className="h-4 w-4 text-green-500" />
-              </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Wed</span>
-              <div className="flex items-center gap-2">
-                <div className="h-2 w-32 bg-secondary rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-green-500"
-                    style={{ width: "100%" }}
-                  />
-                </div>
-                <CheckCircle2 className="h-4 w-4 text-green-500" />
-              </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Thu</span>
-              <div className="flex items-center gap-2">
-                <div className="h-2 w-32 bg-secondary rounded-full overflow-hidden">
-                  <div className="h-full bg-primary" style={{ width: "50%" }} />
-                </div>
-                <Circle className="h-4 w-4 text-muted-foreground" />
-              </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Fri</span>
-              <div className="flex items-center gap-2">
-                <div className="h-2 w-32 bg-secondary rounded-full" />
-                <Circle className="h-4 w-4 text-muted-foreground" />
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
-};
-
-export default TraineeWorkouts;
+}

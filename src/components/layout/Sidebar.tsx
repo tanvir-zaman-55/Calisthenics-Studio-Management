@@ -22,6 +22,7 @@ import {
   Shield,
   UserCog,
   Dumbbell,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -66,6 +67,12 @@ const navItems: NavItem[] = [
     roles: ["super_admin", "admin", "trainee"],
   },
   { to: "/admins", icon: Shield, label: "Admins", roles: ["super_admin"] },
+  {
+    to: "/settings",
+    icon: Settings,
+    label: "Settings",
+    roles: ["super_admin", "admin"],
+  },
 ];
 
 const roleConfig = {
