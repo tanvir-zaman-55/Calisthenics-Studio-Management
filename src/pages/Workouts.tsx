@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState, useEffect } from "react";
 import {
   Card,
@@ -7,10 +9,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Progress } from "@/components/ui/progress";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Dialog,
@@ -21,18 +22,25 @@ import {
   DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useAuth } from "@/context/AuthContext";
+import {
+  Plus,
+  Search,
+  Dumbbell,
   Play,
-  Clock,
   Target,
   TrendingUp,
-  Calendar,
-  CheckCircle2,
-  Circle,
-  Flame,
-  Award,
-  Dumbbell,
+  Zap,
+  List,
   AlertCircle,
 } from "lucide-react";
 
@@ -65,551 +73,450 @@ interface WorkoutTemplate {
   createdAt: string;
 }
 
-interface WorkoutLog {
-  id: string;
-  workoutId: string;
-  date: string;
-  completedExercises: string[];
-  notes: string;
-  duration: number;
-}
+const Workouts = () => {
+  const { isAdmin, isSuperAdmin } = useAuth();
+  const [selectedTab, setSelectedTab] = useState("exercises");
+  const [exerciseTab, setExerciseTab] = useState("all");
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
-export default function TraineeWorkouts() {
+  // State for loaded data
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [workoutTemplates, setWorkoutTemplates] = useState<WorkoutTemplate[]>(
     []
   );
-  const [workoutLogs, setWorkoutLogs] = useState<WorkoutLog[]>([]);
-  const [currentWorkout, setCurrentWorkout] = useState<WorkoutTemplate | null>(
-    null
-  );
-  const [isWorkoutActive, setIsWorkoutActive] = useState(false);
-  const [completedExercises, setCompletedExercises] = useState<Set<string>>(
-    new Set()
-  );
-  const [workoutNotes, setWorkoutNotes] = useState("");
-  const [workoutStartTime, setWorkoutStartTime] = useState<number | null>(null);
 
+  // Load data from localStorage on mount
   useEffect(() => {
     loadData();
   }, []);
 
   const loadData = () => {
     try {
-      const storedExercises = localStorage.getItem("exercises");
-      const storedTemplates = localStorage.getItem("workoutTemplates");
-      const storedLogs = localStorage.getItem("workoutLogs");
+      const storedExercises = localStorage.getItem("imported_exercises");
+      const storedTemplates = localStorage.getItem(
+        "imported_workout_templates"
+      );
 
       if (storedExercises) {
-        setExercises(JSON.parse(storedExercises));
+        const parsedExercises = JSON.parse(storedExercises);
+        setExercises(parsedExercises);
+        console.log("Loaded exercises:", parsedExercises.length);
       }
 
       if (storedTemplates) {
-        const templates = JSON.parse(storedTemplates);
-        setWorkoutTemplates(templates);
-
-        // Set the first template as current workout if available
-        if (templates.length > 0 && !currentWorkout) {
-          setCurrentWorkout(templates[0]);
-        }
-      }
-
-      if (storedLogs) {
-        setWorkoutLogs(JSON.parse(storedLogs));
+        const parsedTemplates = JSON.parse(storedTemplates);
+        setWorkoutTemplates(parsedTemplates);
+        console.log("Loaded templates:", parsedTemplates.length);
       }
     } catch (error) {
       console.error("Error loading data:", error);
     }
   };
 
-  const getExerciseById = (id: string): Exercise | undefined => {
-    return exercises.find((ex) => ex.id === id);
+  const difficultyColors = {
+    Beginner: "bg-green-500/10 text-green-500",
+    Intermediate: "bg-blue-500/10 text-blue-500",
+    Advanced: "bg-red-500/10 text-red-500",
   };
 
-  const startWorkout = (template: WorkoutTemplate) => {
-    setCurrentWorkout(template);
-    setIsWorkoutActive(true);
-    setCompletedExercises(new Set());
-    setWorkoutNotes("");
-    setWorkoutStartTime(Date.now());
-  };
+  const getExercises = () => {
+    if (exercises.length === 0) return [];
 
-  const toggleExerciseCompletion = (exerciseId: string) => {
-    const newCompleted = new Set(completedExercises);
-    if (newCompleted.has(exerciseId)) {
-      newCompleted.delete(exerciseId);
-    } else {
-      newCompleted.add(exerciseId);
+    let filtered = exercises;
+
+    // Filter by category
+    if (exerciseTab !== "all") {
+      filtered = exercises.filter((ex) => {
+        const category = ex.category.toLowerCase();
+        switch (exerciseTab) {
+          case "core":
+            return category.includes("core") || category.includes("abs");
+          case "upper":
+            return (
+              category.includes("upper") ||
+              category.includes("chest") ||
+              category.includes("back") ||
+              category.includes("arm") ||
+              category.includes("shoulder")
+            );
+          case "legs":
+            return category.includes("leg") || category.includes("lower");
+          default:
+            return true;
+        }
+      });
     }
-    setCompletedExercises(newCompleted);
+
+    // Filter by search query
+    if (searchQuery) {
+      filtered = filtered.filter((ex) =>
+        ex.name.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+
+    return filtered;
   };
 
-  const completeWorkout = () => {
-    if (!currentWorkout || !workoutStartTime) return;
-
-    const duration = Math.floor((Date.now() - workoutStartTime) / 1000 / 60); // minutes
-
-    const newLog: WorkoutLog = {
-      id: Date.now().toString(),
-      workoutId: currentWorkout.id,
-      date: new Date().toISOString(),
-      completedExercises: Array.from(completedExercises),
-      notes: workoutNotes,
-      duration,
-    };
-
-    const updatedLogs = [...workoutLogs, newLog];
-    setWorkoutLogs(updatedLogs);
-    localStorage.setItem("workoutLogs", JSON.stringify(updatedLogs));
-
-    setIsWorkoutActive(false);
-    setCompletedExercises(new Set());
-    setWorkoutNotes("");
-    setWorkoutStartTime(null);
-  };
-
-  const calculateProgress = () => {
-    if (!currentWorkout) return 0;
-    const total = currentWorkout.exercises.length;
-    const completed = completedExercises.size;
-    return total > 0 ? (completed / total) * 100 : 0;
-  };
-
-  const getRecentWorkouts = () => {
-    return workoutLogs
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, 5);
-  };
-
-  const getTodaysWorkout = (): WorkoutTemplate | null => {
-    // Simple logic: return the first available template
-    // In a real app, this would be based on a schedule
-    return workoutTemplates.length > 0 ? workoutTemplates[0] : null;
-  };
-
-  const getWeeklyStats = () => {
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-
-    const weeklyLogs = workoutLogs.filter(
-      (log) => new Date(log.date) >= oneWeekAgo
-    );
-
-    return {
-      workoutsCompleted: weeklyLogs.length,
-      totalMinutes: weeklyLogs.reduce((sum, log) => sum + log.duration, 0),
-      averageCompletion:
-        weeklyLogs.length > 0
-          ? Math.round(
-              weeklyLogs.reduce((sum, log) => {
-                const workout = workoutTemplates.find(
-                  (w) => w.id === log.workoutId
-                );
-                if (!workout) return sum;
-                return (
-                  sum +
-                  (log.completedExercises.length / workout.exercises.length) *
-                    100
-                );
-              }, 0) / weeklyLogs.length
-            )
-          : 0,
-    };
-  };
-
-  if (exercises.length === 0 && workoutTemplates.length === 0) {
-    return (
-      <div className="p-6">
-        <Alert>
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            No workouts available yet. Your trainer will assign workouts to you
-            soon. Please contact your admin if you think this is an error.
-          </AlertDescription>
-        </Alert>
-      </div>
-    );
-  }
-
-  const todaysWorkout = getTodaysWorkout();
-  const weeklyStats = getWeeklyStats();
+  const displayedExercises = getExercises();
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold">My Workouts</h1>
-        <p className="text-muted-foreground">
-          Track your progress and complete your training
-        </p>
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">
+            Workout Planning
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Exercise library and workout templates
+          </p>
+        </div>
+        {isAdmin && (
+          <div className="flex gap-2">
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Exercise
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[500px]">
+                <DialogHeader>
+                  <DialogTitle>Add New Exercise</DialogTitle>
+                  <DialogDescription>
+                    Add a new exercise to your library
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 pt-4">
+                  <div className="space-y-2">
+                    <Label>Exercise Name</Label>
+                    <Input placeholder="e.g., Muscle-up" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Category</Label>
+                      <Select>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="core">Core</SelectItem>
+                          <SelectItem value="upper">Upper Body</SelectItem>
+                          <SelectItem value="legs">Legs</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Difficulty</Label>
+                      <Select>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select level" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="beginner">Beginner</SelectItem>
+                          <SelectItem value="intermediate">
+                            Intermediate
+                          </SelectItem>
+                          <SelectItem value="advanced">Advanced</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Description</Label>
+                    <Textarea
+                      placeholder="Describe the exercise and proper form..."
+                      rows={3}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Video URL (optional)</Label>
+                    <Input type="url" placeholder="https://youtube.com/..." />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsDialogOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button onClick={() => setIsDialogOpen(false)}>
+                    Add Exercise
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        )}
       </div>
 
-      {/* Weekly Stats */}
-      <div className="grid gap-4 md:grid-cols-3">
+      {/* Stats */}
+      <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Workouts This Week
+              Total Exercises
             </CardTitle>
             <Dumbbell className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {weeklyStats.workoutsCompleted}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Keep up the momentum!
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Minutes</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{weeklyStats.totalMinutes}</div>
-            <p className="text-xs text-muted-foreground">
-              Time invested in training
-            </p>
+            <div className="text-2xl font-bold">{exercises.length}</div>
+            <p className="text-xs text-muted-foreground mt-1">In library</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Avg Completion
+              Workout Templates
+            </CardTitle>
+            <List className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{workoutTemplates.length}</div>
+            <p className="text-xs text-muted-foreground mt-1">Ready to use</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Active Assignments
             </CardTitle>
             <Target className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {weeklyStats.averageCompletion}%
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Exercise completion rate
-            </p>
+            <div className="text-2xl font-bold">-</div>
+            <p className="text-xs text-muted-foreground mt-1">To trainees</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Completion Rate
+            </CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">-</div>
+            <p className="text-xs text-muted-foreground mt-1">Average rate</p>
           </CardContent>
         </Card>
       </div>
 
-      <Tabs defaultValue="today" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="today">Today's Workout</TabsTrigger>
-          <TabsTrigger value="all">All Programs</TabsTrigger>
-          <TabsTrigger value="history">History</TabsTrigger>
+      {/* Main Content */}
+      <Tabs value={selectedTab} onValueChange={setSelectedTab}>
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="exercises">Exercise Library</TabsTrigger>
+          <TabsTrigger value="templates">Workout Templates</TabsTrigger>
         </TabsList>
 
-        {/* Today's Workout Tab */}
-        <TabsContent value="today" className="space-y-4">
-          {isWorkoutActive && currentWorkout ? (
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <Play className="h-5 w-5 text-green-500" />
-                      Workout in Progress
-                    </CardTitle>
-                    <CardDescription>{currentWorkout.name}</CardDescription>
-                  </div>
-                  <Badge variant="outline" className="text-green-500">
-                    <Circle className="h-2 w-2 fill-current mr-1" />
-                    Active
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
+        {/* Exercise Library Tab */}
+        <TabsContent value="exercises" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
                 <div>
-                  <div className="flex justify-between text-sm mb-2">
-                    <span>Progress</span>
-                    <span>
-                      {completedExercises.size} /{" "}
-                      {currentWorkout.exercises.length} exercises
-                    </span>
-                  </div>
-                  <Progress value={calculateProgress()} />
+                  <CardTitle>Exercise Library</CardTitle>
+                  <CardDescription>
+                    Browse exercises by category
+                  </CardDescription>
                 </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {/* Search */}
+              <div className="mb-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search exercises..."
+                    className="pl-9"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+              </div>
 
-                <div className="space-y-3">
-                  {currentWorkout.exercises.map((workoutEx, index) => {
-                    const exercise = getExerciseById(workoutEx.exerciseId);
-                    if (!exercise) return null;
+              {/* Exercise Type Tabs */}
+              <Tabs value={exerciseTab} onValueChange={setExerciseTab}>
+                <TabsList className="grid w-full grid-cols-4 mb-4">
+                  <TabsTrigger value="all">All</TabsTrigger>
+                  <TabsTrigger value="core">Core</TabsTrigger>
+                  <TabsTrigger value="upper">Upper Body</TabsTrigger>
+                  <TabsTrigger value="legs">Legs</TabsTrigger>
+                </TabsList>
 
-                    const isCompleted = completedExercises.has(exercise.id);
-
-                    return (
+                {displayedExercises.length > 0 ? (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {displayedExercises.map((exercise) => (
                       <Card
                         key={exercise.id}
-                        className={isCompleted ? "bg-muted/50" : ""}
+                        className="overflow-hidden hover:shadow-md transition-shadow"
                       >
                         <CardContent className="p-4">
-                          <div className="flex items-start gap-3">
-                            <Checkbox
-                              checked={isCompleted}
-                              onCheckedChange={() =>
-                                toggleExerciseCompletion(exercise.id)
-                              }
-                              className="mt-1"
-                            />
+                          <div className="flex items-start justify-between mb-3">
                             <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="font-medium">
-                                  {exercise.name}
-                                </span>
-                                <Badge variant="secondary" className="text-xs">
+                              <h3 className="font-semibold text-lg mb-1">
+                                {exercise.name}
+                              </h3>
+                              <div className="flex gap-2 mb-2">
+                                <Badge
+                                  className={
+                                    difficultyColors[
+                                      exercise.difficulty as keyof typeof difficultyColors
+                                    ] || difficultyColors.Beginner
+                                  }
+                                >
                                   {exercise.difficulty}
                                 </Badge>
-                              </div>
-                              <div className="text-sm text-muted-foreground space-y-1">
-                                <div>
-                                  {workoutEx.sets} sets × {workoutEx.reps} reps
-                                </div>
-                                <div>Rest: {workoutEx.rest}s</div>
-                                {workoutEx.notes && (
-                                  <div className="text-xs italic">
-                                    {workoutEx.notes}
-                                  </div>
-                                )}
+                                <Badge variant="outline">
+                                  {exercise.category}
+                                </Badge>
                               </div>
                             </div>
+                            {exercise.videoUrl && (
+                              <Button variant="ghost" size="icon">
+                                <Play className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+
+                          <p className="text-sm text-muted-foreground mb-3">
+                            {exercise.description}
+                          </p>
+
+                          <div className="flex items-center gap-4 text-sm">
+                            <div className="flex items-center gap-1">
+                              <Zap className="h-3 w-3 text-muted-foreground" />
+                              <span>{exercise.equipment || "Bodyweight"}</span>
+                            </div>
+                            {exercise.primaryMuscles &&
+                              exercise.primaryMuscles.length > 0 && (
+                                <div className="flex items-center gap-1">
+                                  <Target className="h-3 w-3 text-muted-foreground" />
+                                  <span>{exercise.primaryMuscles[0]}</span>
+                                </div>
+                              )}
                           </div>
                         </CardContent>
                       </Card>
-                    );
-                  })}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      {exercises.length === 0
+                        ? "No exercises available. Import data from Google Sheets in Settings."
+                        : "No exercises found matching your search."}
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </Tabs>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Workout Notes</label>
-                  <Textarea
-                    placeholder="How did the workout feel? Any notes for next time..."
-                    value={workoutNotes}
-                    onChange={(e) => setWorkoutNotes(e.target.value)}
-                    rows={3}
-                  />
+        {/* Workout Templates Tab */}
+        <TabsContent value="templates" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Workout Templates</CardTitle>
+                  <CardDescription>Pre-built workout programs</CardDescription>
                 </div>
-
-                <div className="flex gap-2">
-                  <Button
-                    onClick={completeWorkout}
-                    className="flex-1"
-                    disabled={completedExercises.size === 0}
-                  >
-                    <CheckCircle2 className="h-4 w-4 mr-2" />
-                    Complete Workout
+                {isAdmin && (
+                  <Button>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create Template
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setIsWorkoutActive(false);
-                      setCompletedExercises(new Set());
-                      setWorkoutStartTime(null);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <>
-              {todaysWorkout ? (
-                <Card>
-                  <CardHeader>
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-5 w-5" />
-                      <CardTitle>Today's Workout</CardTitle>
-                    </div>
-                    <CardDescription>
-                      {todaysWorkout.description}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center gap-4 text-sm">
-                      <div className="flex items-center gap-1">
-                        <Clock className="h-4 w-4" />
-                        <span>{todaysWorkout.duration} min</span>
-                      </div>
-                      <Badge>{todaysWorkout.difficulty}</Badge>
-                      <Badge variant="outline">
-                        {todaysWorkout.exercises.length} exercises
-                      </Badge>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="font-medium text-sm">Exercises:</div>
-                      <div className="space-y-1">
-                        {todaysWorkout.exercises
-                          .slice(0, 3)
-                          .map((workoutEx) => {
-                            const exercise = getExerciseById(
-                              workoutEx.exerciseId
-                            );
-                            if (!exercise) return null;
-                            return (
-                              <div
-                                key={exercise.id}
-                                className="text-sm text-muted-foreground"
-                              >
-                                • {exercise.name} - {workoutEx.sets}×
-                                {workoutEx.reps}
-                              </div>
-                            );
-                          })}
-                        {todaysWorkout.exercises.length > 3 && (
-                          <div className="text-sm text-muted-foreground">
-                            + {todaysWorkout.exercises.length - 3} more
-                            exercises
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <Button
-                      onClick={() => startWorkout(todaysWorkout)}
-                      className="w-full"
-                      size="lg"
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {workoutTemplates.length > 0 ? (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {workoutTemplates.map((template) => (
+                    <Card
+                      key={template.id}
+                      className="overflow-hidden hover:shadow-md transition-shadow border-2"
                     >
-                      <Play className="h-4 w-4 mr-2" />
-                      Start Workout
-                    </Button>
-                  </CardContent>
-                </Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">
+                          {template.name}
+                        </CardTitle>
+                        <CardDescription>
+                          {template.description}
+                        </CardDescription>
+                        <div className="flex items-center gap-2 mt-2">
+                          <Badge
+                            className={
+                              difficultyColors[
+                                template.difficulty as keyof typeof difficultyColors
+                              ] || difficultyColors.Beginner
+                            }
+                          >
+                            {template.difficulty}
+                          </Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pt-4">
+                        <div className="space-y-2 text-sm mb-4">
+                          <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground">
+                              Duration
+                            </span>
+                            <span className="font-medium">
+                              {template.duration} min
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground">
+                              Exercises
+                            </span>
+                            <span className="font-medium">
+                              {template.exercises?.length || 0}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1"
+                          >
+                            View
+                          </Button>
+                          {isAdmin && (
+                            <Button size="sm" className="flex-1">
+                              Assign
+                            </Button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
               ) : (
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
-                    No workout scheduled for today. Check your program or
-                    contact your trainer.
+                    No workout templates available. Import data from Google
+                    Sheets in Settings.
                   </AlertDescription>
                 </Alert>
               )}
-            </>
-          )}
-        </TabsContent>
-
-        {/* All Programs Tab */}
-        <TabsContent value="all" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            {workoutTemplates.map((template) => (
-              <Card key={template.id}>
-                <CardHeader>
-                  <CardTitle>{template.name}</CardTitle>
-                  <CardDescription>{template.description}</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center gap-4 text-sm">
-                    <div className="flex items-center gap-1">
-                      <Clock className="h-4 w-4" />
-                      <span>{template.duration} min</span>
-                    </div>
-                    <Badge>{template.difficulty}</Badge>
-                    <Badge variant="outline">
-                      {template.exercises.length} exercises
-                    </Badge>
-                  </div>
-
-                  <Button
-                    onClick={() => startWorkout(template)}
-                    className="w-full"
-                    variant={
-                      currentWorkout?.id === template.id ? "default" : "outline"
-                    }
-                    disabled={isWorkoutActive}
-                  >
-                    <Play className="h-4 w-4 mr-2" />
-                    {isWorkoutActive
-                      ? "Finish current workout first"
-                      : "Start Workout"}
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
-          {workoutTemplates.length === 0 && (
-            <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                No workout programs available. Your trainer will assign programs
-                soon.
-              </AlertDescription>
-            </Alert>
-          )}
-        </TabsContent>
-
-        {/* History Tab */}
-        <TabsContent value="history" className="space-y-4">
-          {getRecentWorkouts().length > 0 ? (
-            <div className="space-y-3">
-              {getRecentWorkouts().map((log) => {
-                const workout = workoutTemplates.find(
-                  (w) => w.id === log.workoutId
-                );
-                if (!workout) return null;
-
-                const completionRate = Math.round(
-                  (log.completedExercises.length / workout.exercises.length) *
-                    100
-                );
-
-                return (
-                  <Card key={log.id}>
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1">
-                          <div className="font-medium">{workout.name}</div>
-                          <div className="text-sm text-muted-foreground">
-                            {new Date(log.date).toLocaleDateString("en-US", {
-                              weekday: "short",
-                              year: "numeric",
-                              month: "short",
-                              day: "numeric",
-                            })}
-                          </div>
-                          <div className="flex items-center gap-3 text-sm">
-                            <span className="flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              {log.duration} min
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Target className="h-3 w-3" />
-                              {completionRate}% complete
-                            </span>
-                          </div>
-                          {log.notes && (
-                            <p className="text-sm text-muted-foreground italic mt-2">
-                              "{log.notes}"
-                            </p>
-                          )}
-                        </div>
-                        <Badge
-                          variant={
-                            completionRate === 100 ? "default" : "secondary"
-                          }
-                        >
-                          {log.completedExercises.length}/
-                          {workout.exercises.length}
-                        </Badge>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          ) : (
-            <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                No workout history yet. Complete your first workout to see it
-                here!
-              </AlertDescription>
-            </Alert>
-          )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>
   );
-}
+};
+
+export default Workouts;

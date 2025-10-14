@@ -13,10 +13,17 @@ import Classes from "./pages/Classes";
 import Schedule from "./pages/Schedule";
 import Admins from "./pages/Admins";
 import Workouts from "./pages/Workouts";
+import TraineeWorkouts from "./pages/TraineeWorkouts";
 import Settings from "./pages/Settings";
-import { AuthProvider } from "./context/AuthContext";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 
 const queryClient = new QueryClient();
+
+// Wrapper component to handle role-based routing for workouts
+const WorkoutsRoute = () => {
+  const { isTrainee } = useAuth();
+  return isTrainee ? <TraineeWorkouts /> : <Workouts />;
+};
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -36,7 +43,7 @@ const App = () => (
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/clients" element={<Clients />} />
               <Route path="/clients/:id" element={<ClientDetail />} />
-              <Route path="/workouts" element={<Workouts />} />
+              <Route path="/workouts" element={<WorkoutsRoute />} />
               <Route path="/classes" element={<Classes />} />
               <Route path="/schedule" element={<Schedule />} />
               <Route path="/admins" element={<Admins />} />
