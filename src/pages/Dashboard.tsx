@@ -5,6 +5,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ConvexTest } from "@/components/ConvexTest";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -130,7 +131,7 @@ const Dashboard = () => {
           {currentUserRole.replace("_", " ").toUpperCase()}
         </Badge>
       </div>
-
+      <ConvexTest />
       {/* Stats Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat) => {

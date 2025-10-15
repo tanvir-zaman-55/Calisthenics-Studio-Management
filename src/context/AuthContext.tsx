@@ -1,110 +1,102 @@
-"use client";
-
-import React, {
-  createContext,
-  useContext,
-  useState,
-  ReactNode,
-  useEffect,
-} from "react";
-
-type UserRole = "super_admin" | "admin" | "trainee";
+import React, { createContext, useContext, useState, useEffect } from "react";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 
 interface User {
-  id: string;
+  _id: Id<"users">;
   name: string;
   email: string;
-  role: UserRole;
+  role: "super_admin" | "admin" | "trainee";
+  status: "active" | "inactive";
+  phone?: string;
+  assignedAdminId?: Id<"users">;
+  weeklyGoal?: number;
 }
 
 interface AuthContextType {
   currentUser: User | null;
-  currentUserRole: UserRole;
-  setCurrentUserRole: (role: UserRole) => void;
+  currentUserRole: "super_admin" | "admin" | "trainee";
   isSuperAdmin: boolean;
   isAdmin: boolean;
   isTrainee: boolean;
-  hasAccess: (allowedRoles: UserRole[]) => boolean;
-  login: (role: UserRole) => void;
+  login: (email: string) => Promise<void>;
   logout: () => void;
+  setDevRole: (role: "super_admin" | "admin" | "trainee") => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Mock user data for each role
-const mockUsers: Record<UserRole, User> = {
-  super_admin: {
-    id: "1",
-    name: "Super Admin",
-    email: "superadmin@calisthenics.com",
-    role: "super_admin",
-  },
-  admin: {
-    id: "2",
-    name: "Admin User",
-    email: "admin@calisthenics.com",
-    role: "admin",
-  },
-  trainee: {
-    id: "3",
-    name: "John Trainee",
-    email: "trainee@calisthenics.com",
-    role: "trainee",
-  },
-};
-
-export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  // Load role from localStorage or default to super_admin for development
-  const [currentUserRole, setCurrentUserRole] = useState<UserRole>(() => {
-    const savedRole = localStorage.getItem("dev_user_role") as UserRole;
-    return savedRole || "super_admin";
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
+  const [currentUserId, setCurrentUserId] = useState<Id<"users"> | null>(() => {
+    const stored = localStorage.getItem("currentUserId");
+    return stored as Id<"users"> | null;
   });
 
-  const [currentUser, setCurrentUser] = useState<User | null>(
-    mockUsers[currentUserRole]
-  );
+  // Query current user from Convex (note: api.user not api.users)
+  const currentUser = useQuery(
+    api.user.getUserById,
+    currentUserId ? { userId: currentUserId } : "skip"
+  ) as User | null | undefined;
 
-  // Save role to localStorage whenever it changes
+  const simpleLogin = useMutation(api.user.simpleLogin);
+
+  // Initialize with default user if none selected
   useEffect(() => {
-    localStorage.setItem("dev_user_role", currentUserRole);
-    setCurrentUser(mockUsers[currentUserRole]);
-  }, [currentUserRole]);
+    if (!currentUserId) {
+      // Default to admin user for development
+      const defaultUserId = "k179fgra9xtxk0mtqz1hxk45497shza4" as Id<"users">;
+      setCurrentUserId(defaultUserId);
+      localStorage.setItem("currentUserId", defaultUserId);
+    }
+  }, [currentUserId]);
 
-  const isSuperAdmin = currentUserRole === "super_admin";
-  const isAdmin = currentUserRole === "admin" || isSuperAdmin;
-  const isTrainee = currentUserRole === "trainee";
-
-  // Helper function to check if user has access based on allowed roles
-  const hasAccess = (allowedRoles: UserRole[]): boolean => {
-    return allowedRoles.includes(currentUserRole);
+  const login = async (email: string) => {
+    try {
+      const result = await simpleLogin({ email });
+      setCurrentUserId(result.userId);
+      localStorage.setItem("currentUserId", result.userId);
+    } catch (error) {
+      console.error("Login failed:", error);
+      throw error;
+    }
   };
 
-  // Mock login function for development
-  const login = (role: UserRole) => {
-    setCurrentUserRole(role);
-  };
-
-  // Mock logout function
   const logout = () => {
-    setCurrentUserRole("trainee"); // Default to lowest privilege
+    setCurrentUserId(null);
+    localStorage.removeItem("currentUserId");
+  };
+
+  // Dev mode: Switch roles using your actual seeded user IDs
+  const setDevRole = (role: "super_admin" | "admin" | "trainee") => {
+    // IMPORTANT: Replace these with YOUR actual user IDs from the seed result
+    const roleToUserId: Record<string, string> = {
+      super_admin: "k17eq2s2devscvxe2dahpdb4k17shvmw", // Your super admin ID
+      admin: "k179fgra9xtxk0mtqz1hxk45497shza4", // Your admin ID
+      trainee: "k177pvk0gj5qhyqewp13m40x6d7sh1k7", // Your trainee ID
+    };
+
+    const userId = roleToUserId[role] as Id<"users">;
+    setCurrentUserId(userId);
+    localStorage.setItem("currentUserId", userId);
+  };
+
+  const contextValue: AuthContextType = {
+    currentUser: currentUser || null,
+    currentUserRole: currentUser?.role || "admin",
+    isSuperAdmin: currentUser?.role === "super_admin",
+    isAdmin:
+      currentUser?.role === "admin" || currentUser?.role === "super_admin",
+    isTrainee: currentUser?.role === "trainee",
+    login,
+    logout,
+    setDevRole,
   };
 
   return (
-    <AuthContext.Provider
-      value={{
-        currentUser,
-        currentUserRole,
-        setCurrentUserRole,
-        isSuperAdmin,
-        isAdmin,
-        isTrainee,
-        hasAccess,
-        login,
-        logout,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+    <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>
   );
 };
 

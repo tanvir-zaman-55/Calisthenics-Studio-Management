@@ -43,9 +43,12 @@ import {
   List,
   AlertCircle,
 } from "lucide-react";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 
 interface Exercise {
-  id: string;
+  _id: Id<"exercises">;
   name: string;
   category: string;
   difficulty: string;
@@ -56,7 +59,7 @@ interface Exercise {
 }
 
 interface WorkoutExercise {
-  exerciseId: string;
+  exerciseId: Id<"exercises">;
   sets: number;
   reps: string;
   rest: number;
@@ -64,55 +67,27 @@ interface WorkoutExercise {
 }
 
 interface WorkoutTemplate {
-  id: string;
+  _id: Id<"workoutTemplates">;
   name: string;
   description: string;
   difficulty: string;
   duration: number;
   exercises: WorkoutExercise[];
-  createdAt: string;
+  createdAt: number;
 }
 
 const Workouts = () => {
-  const { isAdmin, isSuperAdmin } = useAuth();
+  const { isAdmin, isSuperAdmin, currentUser } = useAuth();
   const [selectedTab, setSelectedTab] = useState("exercises");
   const [exerciseTab, setExerciseTab] = useState("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // State for loaded data
-  const [exercises, setExercises] = useState<Exercise[]>([]);
-  const [workoutTemplates, setWorkoutTemplates] = useState<WorkoutTemplate[]>(
-    []
-  );
+  // Load data from Convex (replaces localStorage)
+  const exercises = useQuery(api.exercises.getAllExercises) ?? [];
+  const workoutTemplates = useQuery(api.workoutTemplates.getAllTemplates) ?? [];
 
-  // Load data from localStorage on mount
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = () => {
-    try {
-      const storedExercises = localStorage.getItem("imported_exercises");
-      const storedTemplates = localStorage.getItem(
-        "imported_workout_templates"
-      );
-
-      if (storedExercises) {
-        const parsedExercises = JSON.parse(storedExercises);
-        setExercises(parsedExercises);
-        console.log("Loaded exercises:", parsedExercises.length);
-      }
-
-      if (storedTemplates) {
-        const parsedTemplates = JSON.parse(storedTemplates);
-        setWorkoutTemplates(parsedTemplates);
-        console.log("Loaded templates:", parsedTemplates.length);
-      }
-    } catch (error) {
-      console.error("Error loading data:", error);
-    }
-  };
+  // Remove the old useEffect and loadData function
 
   const difficultyColors = {
     Beginner: "bg-green-500/10 text-green-500",
@@ -354,7 +329,7 @@ const Workouts = () => {
                   <div className="grid gap-3 md:grid-cols-2">
                     {displayedExercises.map((exercise) => (
                       <Card
-                        key={exercise.id}
+                        key={exercise._id}
                         className="overflow-hidden hover:shadow-md transition-shadow"
                       >
                         <CardContent className="p-4">
@@ -443,7 +418,7 @@ const Workouts = () => {
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                   {workoutTemplates.map((template) => (
                     <Card
-                      key={template.id}
+                      key={template._id}
                       className="overflow-hidden hover:shadow-md transition-shadow border-2"
                     >
                       <CardHeader>

@@ -35,9 +35,12 @@ import {
   Dumbbell,
   AlertCircle,
 } from "lucide-react";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 
 interface Exercise {
-  id: string;
+  _id: Id<"exercises">;
   name: string;
   category: string;
   difficulty: string;
@@ -48,7 +51,7 @@ interface Exercise {
 }
 
 interface WorkoutExercise {
-  exerciseId: string;
+  exerciseId: Id<"exercises">;
   sets: number;
   reps: string;
   rest: number;
@@ -56,7 +59,7 @@ interface WorkoutExercise {
 }
 
 interface WorkoutTemplate {
-  id: string;
+  _id: Id<"workoutTemplates">;
   name: string;
   description: string;
   difficulty: string;
@@ -66,7 +69,7 @@ interface WorkoutTemplate {
 }
 
 interface WorkoutLog {
-  id: string;
+  _id: string;
   workoutId: string;
   date: string;
   completedExercises: string[];
@@ -75,56 +78,32 @@ interface WorkoutLog {
 }
 
 export default function TraineeWorkouts() {
-  const [exercises, setExercises] = useState<Exercise[]>([]);
-  const [workoutTemplates, setWorkoutTemplates] = useState<WorkoutTemplate[]>(
-    []
-  );
-  const [workoutLogs, setWorkoutLogs] = useState<WorkoutLog[]>([]);
   const [currentWorkout, setCurrentWorkout] = useState<WorkoutTemplate | null>(
     null
   );
   const [isWorkoutActive, setIsWorkoutActive] = useState(false);
-  const [completedExercises, setCompletedExercises] = useState<Set<string>>(
-    new Set()
-  );
+  const [completedExercises, setCompletedExercises] = useState<
+    Set<Id<"exercises">>
+  >(new Set()); // ✅
   const [workoutNotes, setWorkoutNotes] = useState("");
   const [workoutStartTime, setWorkoutStartTime] = useState<number | null>(null);
 
+  // Load data from Convex
+  const exercises = useQuery(api.exercises.getAllExercises) ?? [];
+  const workoutTemplates = useQuery(api.workoutTemplates.getAllTemplates) ?? [];
+
+  // Keep workoutLogs in localStorage for now (we'll migrate this later)
+  const [workoutLogs, setWorkoutLogs] = useState<WorkoutLog[]>([]);
+
   useEffect(() => {
-    loadData();
+    const storedLogs = localStorage.getItem("workoutLogs");
+    if (storedLogs) {
+      setWorkoutLogs(JSON.parse(storedLogs));
+    }
   }, []);
 
-  const loadData = () => {
-    try {
-      const storedExercises = localStorage.getItem("imported_exercises");
-      const storedTemplates = localStorage.getItem(
-        "imported_workout_templates"
-      );
-      const storedLogs = localStorage.getItem("workoutLogs");
-
-      if (storedExercises) {
-        setExercises(JSON.parse(storedExercises));
-      }
-
-      if (storedTemplates) {
-        const templates = JSON.parse(storedTemplates);
-        setWorkoutTemplates(templates);
-
-        if (templates.length > 0 && !currentWorkout) {
-          setCurrentWorkout(templates[0]);
-        }
-      }
-
-      if (storedLogs) {
-        setWorkoutLogs(JSON.parse(storedLogs));
-      }
-    } catch (error) {
-      console.error("Error loading data:", error);
-    }
-  };
-
-  const getExerciseById = (id: string): Exercise | undefined => {
-    return exercises.find((ex) => ex.id === id);
+  const getExerciseById = (id: Id<"exercises">): Exercise | undefined => {
+    return exercises.find((ex) => ex._id === id);
   };
 
   const startWorkout = (template: WorkoutTemplate) => {
@@ -135,7 +114,7 @@ export default function TraineeWorkouts() {
     setWorkoutStartTime(Date.now());
   };
 
-  const toggleExerciseCompletion = (exerciseId: string) => {
+  const toggleExerciseCompletion = (exerciseId: Id<"exercises">) => {
     const newCompleted = new Set(completedExercises);
     if (newCompleted.has(exerciseId)) {
       newCompleted.delete(exerciseId);
@@ -151,8 +130,8 @@ export default function TraineeWorkouts() {
     const duration = Math.floor((Date.now() - workoutStartTime) / 1000 / 60);
 
     const newLog: WorkoutLog = {
-      id: Date.now().toString(),
-      workoutId: currentWorkout.id,
+      _id: Date.now().toString(),
+      workoutId: currentWorkout._id,
       date: new Date().toISOString(),
       completedExercises: Array.from(completedExercises),
       notes: workoutNotes,
@@ -202,7 +181,7 @@ export default function TraineeWorkouts() {
           ? Math.round(
               weeklyLogs.reduce((sum, log) => {
                 const workout = workoutTemplates.find(
-                  (w) => w.id === log.workoutId
+                  (w) => w._id === log.workoutId
                 );
                 if (!workout || !workout.exercises) return sum;
                 return (
@@ -333,11 +312,11 @@ export default function TraineeWorkouts() {
                     const exercise = getExerciseById(workoutEx.exerciseId);
                     if (!exercise) return null;
 
-                    const isCompleted = completedExercises.has(exercise.id);
+                    const isCompleted = completedExercises.has(exercise._id);
 
                     return (
                       <Card
-                        key={exercise.id}
+                        key={exercise._id}
                         className={isCompleted ? "bg-muted/50" : ""}
                       >
                         <CardContent className="p-4">
@@ -345,7 +324,7 @@ export default function TraineeWorkouts() {
                             <Checkbox
                               checked={isCompleted}
                               onCheckedChange={() =>
-                                toggleExerciseCompletion(exercise.id)
+                                toggleExerciseCompletion(exercise._id)
                               }
                               className="mt-1"
                             />
@@ -446,7 +425,7 @@ export default function TraineeWorkouts() {
                             if (!exercise) return null;
                             return (
                               <div
-                                key={exercise.id}
+                                key={exercise._id}
                                 className="text-sm text-muted-foreground"
                               >
                                 • {exercise.name} - {workoutEx.sets}×
@@ -489,7 +468,7 @@ export default function TraineeWorkouts() {
         <TabsContent value="all" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             {workoutTemplates.map((template) => (
-              <Card key={template.id}>
+              <Card key={template._id}>
                 <CardHeader>
                   <CardTitle>{template.name}</CardTitle>
                   <CardDescription>{template.description}</CardDescription>
@@ -510,7 +489,9 @@ export default function TraineeWorkouts() {
                     onClick={() => startWorkout(template)}
                     className="w-full"
                     variant={
-                      currentWorkout?.id === template.id ? "default" : "outline"
+                      currentWorkout?._id === template._id
+                        ? "default"
+                        : "outline"
                     }
                     disabled={isWorkoutActive}
                   >
@@ -540,7 +521,7 @@ export default function TraineeWorkouts() {
             <div className="space-y-3">
               {getRecentWorkouts().map((log) => {
                 const workout = workoutTemplates.find(
-                  (w) => w.id === log.workoutId
+                  (w) => w._id === log.workoutId
                 );
                 if (!workout) return null;
 
@@ -551,7 +532,7 @@ export default function TraineeWorkouts() {
                 );
 
                 return (
-                  <Card key={log.id}>
+                  <Card key={log._id}>
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between">
                         <div className="space-y-1">

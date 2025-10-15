@@ -94,7 +94,7 @@ const roleConfig = {
 };
 
 const SidebarContent = ({ onLinkClick }: { onLinkClick?: () => void }) => {
-  const { currentUserRole, currentUser, setCurrentUserRole } = useAuth();
+  const { currentUserRole, currentUser, setDevRole } = useAuth();
   const RoleIcon = roleConfig[currentUserRole].icon;
 
   return (
@@ -155,7 +155,9 @@ const SidebarContent = ({ onLinkClick }: { onLinkClick?: () => void }) => {
             </label>
             <Select
               value={currentUserRole}
-              onValueChange={(value) => setCurrentUserRole(value as any)}
+              onValueChange={(value) =>
+                setDevRole(value as "super_admin" | "admin" | "trainee")
+              }
             >
               <SelectTrigger className="w-full">
                 <SelectValue />

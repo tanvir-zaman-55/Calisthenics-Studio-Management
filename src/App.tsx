@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { ConvexProvider, ConvexReactClient } from "convex/react"; // ← NEW
 import Layout from "./components/layout/Layout";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
@@ -19,6 +20,9 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 
 const queryClient = new QueryClient();
 
+// ← NEW: Initialize Convex client
+const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL);
+
 // Wrapper component to handle role-based routing for workouts
 const WorkoutsRoute = () => {
   const { isTrainee } = useAuth();
@@ -26,36 +30,39 @@ const WorkoutsRoute = () => {
 };
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter
-        future={{
-          v7_startTransition: true,
-          v7_relativeSplatPath: true,
-        }}
-      >
-        <AuthProvider>
-          <Layout>
-            <Routes>
-              <Route path="/" element={<Index />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/clients" element={<Clients />} />
-              <Route path="/clients/:id" element={<ClientDetail />} />
-              <Route path="/workouts" element={<WorkoutsRoute />} />
-              <Route path="/classes" element={<Classes />} />
-              <Route path="/schedule" element={<Schedule />} />
-              <Route path="/admins" element={<Admins />} />
-              <Route path="/settings" element={<Settings />} />
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Layout>
-        </AuthProvider>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
+  <ConvexProvider client={convex}>
+    {" "}
+    {/* ← NEW: Wrap entire app */}
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter
+          future={{
+            v7_startTransition: true,
+            v7_relativeSplatPath: true,
+          }}
+        >
+          <AuthProvider>
+            <Layout>
+              <Routes>
+                <Route path="/" element={<Index />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/clients" element={<Clients />} />
+                <Route path="/clients/:id" element={<ClientDetail />} />
+                <Route path="/workouts" element={<WorkoutsRoute />} />
+                <Route path="/classes" element={<Classes />} />
+                <Route path="/schedule" element={<Schedule />} />
+                <Route path="/admins" element={<Admins />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Layout>
+          </AuthProvider>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  </ConvexProvider>
 );
 
 export default App;
