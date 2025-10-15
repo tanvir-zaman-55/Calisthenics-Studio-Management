@@ -27,7 +27,9 @@ import {
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAuth } from "@/context/AuthContext";
-
+import { useQuery } from "convex/react";
+import { api } from "../../../convex/_generated/api";
+import type { Id } from "../../../convex/_generated/dataModel";
 interface NavItem {
   to: string;
   icon: React.ElementType;
@@ -58,12 +60,18 @@ const navItems: NavItem[] = [
     to: "/classes",
     icon: ClipboardList,
     label: "Classes",
-    roles: ["super_admin", "admin"],
+    roles: ["super_admin", "admin", "trainee"],
   },
   {
     to: "/schedule",
     icon: Calendar,
     label: "Schedule",
+    roles: ["super_admin", "admin", "trainee"],
+  },
+  {
+    to: "/attendance",
+    icon: ClipboardList, // We can use same icon or import CheckCircle2
+    label: "Attendance",
     roles: ["super_admin", "admin", "trainee"],
   },
   { to: "/admins", icon: Shield, label: "Admins", roles: ["super_admin"] },
@@ -94,9 +102,10 @@ const roleConfig = {
 };
 
 const SidebarContent = ({ onLinkClick }: { onLinkClick?: () => void }) => {
-  const { currentUserRole, currentUser, setDevRole } = useAuth();
+  const { currentUserRole, currentUser, setDevRole, setCurrentUserById } =
+    useAuth();
   const RoleIcon = roleConfig[currentUserRole].icon;
-
+  const allUsers = useQuery(api.user.getAllUsers);
   return (
     <div className="flex flex-col h-full p-4">
       {/* Header */}
@@ -151,36 +160,87 @@ const SidebarContent = ({ onLinkClick }: { onLinkClick?: () => void }) => {
 
           <div className="space-y-2">
             <label className="text-xs text-muted-foreground">
-              Switch Role (Dev Mode)
+              Switch User (Dev Mode)
             </label>
             <Select
-              value={currentUserRole}
-              onValueChange={(value) =>
-                setDevRole(value as "super_admin" | "admin" | "trainee")
-              }
+              value={currentUser?._id || ""}
+              onValueChange={(userId) => {
+                setCurrentUserById(userId as Id<"users">);
+              }}
             >
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="super_admin">
-                  <div className="flex items-center gap-2">
-                    <Shield className="h-4 w-4" />
-                    Super Admin
-                  </div>
-                </SelectItem>
-                <SelectItem value="admin">
-                  <div className="flex items-center gap-2">
-                    <UserCog className="h-4 w-4" />
-                    Admin
-                  </div>
-                </SelectItem>
-                <SelectItem value="trainee">
-                  <div className="flex items-center gap-2">
-                    <Users className="h-4 w-4" />
-                    Trainee
-                  </div>
-                </SelectItem>
+                {/* Super Admins */}
+                {allUsers?.filter((u) => u.role === "super_admin").length >
+                  0 && (
+                  <>
+                    <SelectItem
+                      disabled
+                      value="super-admin-header"
+                      className="font-semibold"
+                    >
+                      Super Admins
+                    </SelectItem>
+                    {allUsers
+                      ?.filter((u) => u.role === "super_admin")
+                      .map((user) => (
+                        <SelectItem key={user._id} value={user._id}>
+                          <div className="flex items-center gap-2">
+                            <Shield className="h-4 w-4" />
+                            {user.name}
+                          </div>
+                        </SelectItem>
+                      ))}
+                  </>
+                )}
+
+                {/* Admins */}
+                {allUsers?.filter((u) => u.role === "admin").length > 0 && (
+                  <>
+                    <SelectItem
+                      disabled
+                      value="admin-header"
+                      className="font-semibold mt-2"
+                    >
+                      Admins
+                    </SelectItem>
+                    {allUsers
+                      ?.filter((u) => u.role === "admin")
+                      .map((user) => (
+                        <SelectItem key={user._id} value={user._id}>
+                          <div className="flex items-center gap-2">
+                            <UserCog className="h-4 w-4" />
+                            {user.name}
+                          </div>
+                        </SelectItem>
+                      ))}
+                  </>
+                )}
+
+                {/* Trainees */}
+                {allUsers?.filter((u) => u.role === "trainee").length > 0 && (
+                  <>
+                    <SelectItem
+                      disabled
+                      value="trainee-header"
+                      className="font-semibold mt-2"
+                    >
+                      Trainees
+                    </SelectItem>
+                    {allUsers
+                      ?.filter((u) => u.role === "trainee")
+                      .map((user) => (
+                        <SelectItem key={user._id} value={user._id}>
+                          <div className="flex items-center gap-2">
+                            <Users className="h-4 w-4" />
+                            {user.name}
+                          </div>
+                        </SelectItem>
+                      ))}
+                  </>
+                )}
               </SelectContent>
             </Select>
           </div>

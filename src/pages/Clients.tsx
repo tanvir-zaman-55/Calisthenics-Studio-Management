@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -10,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Dialog,
   DialogContent,
@@ -29,96 +32,88 @@ import {
 } from "@/components/ui/select";
 import { useAuth } from "@/context/AuthContext";
 import {
-  Users,
+  Plus,
   Search,
   UserPlus,
-  Filter,
+  Users,
+  TrendingUp,
+  Calendar,
+  Dumbbell,
   Mail,
   Phone,
-  ArrowRight,
-  Dumbbell,
-  Eye,
 } from "lucide-react";
-
-// Mock client data
-const mockClients = [
-  {
-    id: "1",
-    name: "Ahmed Hassan",
-    email: "ahmed@example.com",
-    phone: "+880 1234 567890",
-    status: "Active",
-    joinDate: "2024-01-15",
-    classes: 12,
-  },
-  {
-    id: "2",
-    name: "Sara Ibrahim",
-    email: "sara@example.com",
-    phone: "+880 1234 567891",
-    status: "Active",
-    joinDate: "2024-02-20",
-    classes: 8,
-  },
-  {
-    id: "3",
-    name: "Mohamed Ali",
-    email: "mohamed@example.com",
-    phone: "+880 1234 567892",
-    status: "Inactive",
-    joinDate: "2023-12-10",
-    classes: 3,
-  },
-  {
-    id: "4",
-    name: "Fatima Nour",
-    email: "fatima@example.com",
-    phone: "+880 1234 567893",
-    status: "Active",
-    joinDate: "2024-03-05",
-    classes: 15,
-  },
-  {
-    id: "5",
-    name: "Omar Khalil",
-    email: "omar@example.com",
-    phone: "+880 1234 567894",
-    status: "Active",
-    joinDate: "2024-01-28",
-    classes: 10,
-  },
-];
+import { useQuery, useMutation } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 
 const Clients = () => {
-  const { isSuperAdmin, isAdmin } = useAuth();
   const navigate = useNavigate();
-  const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
-  const [isAddClientDialogOpen, setIsAddClientDialogOpen] = useState(false);
-  const [selectedClient, setSelectedClient] = useState<any>(null);
-  const [selectedWorkout, setSelectedWorkout] = useState("");
+  const { isSuperAdmin, currentUser } = useAuth();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  const availableWorkouts = [
-    { id: "t1", name: "Beginner Core Fundamentals", type: "Core" },
-    { id: "t2", name: "Upper Body Power", type: "Upper Body" },
-    { id: "t3", name: "Leg Day Intense", type: "Legs" },
-  ];
+  // Load trainees with stats
+  const trainees =
+    useQuery(
+      api.trainees.getAllTraineesWithStats,
+      currentUser
+        ? {
+            adminId: currentUser._id,
+            role: currentUser.role,
+          }
+        : "skip"
+    ) ?? [];
+  // Load admins for assignment
+  const admins = useQuery(api.user.getUsersByRole, { role: "admin" }) ?? [];
 
-  const handleAssignWorkout = () => {
-    console.log(
-      "Assigning workout:",
-      selectedWorkout,
-      "to client:",
-      selectedClient?.id
-    );
-    setIsAssignDialogOpen(false);
-    setSelectedWorkout("");
-    setSelectedClient(null);
+  const createUser = useMutation(api.user.createUser);
+
+  // Form state
+  const [newTrainee, setNewTrainee] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    assignedAdminId: "" as Id<"users"> | "",
+  });
+
+  const handleCreateTrainee = async () => {
+    if (!currentUser) return;
+
+    try {
+      await createUser({
+        name: newTrainee.name,
+        email: newTrainee.email,
+        phone: newTrainee.phone,
+        role: "trainee",
+        assignedAdminId: newTrainee.assignedAdminId || currentUser._id,
+      });
+
+      setNewTrainee({
+        name: "",
+        email: "",
+        phone: "",
+        assignedAdminId: "",
+      });
+      setIsDialogOpen(false);
+      alert("Trainee added successfully!");
+    } catch (error) {
+      console.error("Error creating trainee:", error);
+      alert("Failed to add trainee");
+    }
   };
 
-  const handleAddClient = (e: React.FormEvent) => {
-    e.preventDefault();
-    console.log("Adding new client");
-    setIsAddClientDialogOpen(false);
+  const filteredTrainees = trainees.filter(
+    (trainee) =>
+      trainee.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      trainee.email.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase();
   };
 
   return (
@@ -128,310 +123,275 @@ const Clients = () => {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Clients</h1>
           <p className="text-muted-foreground mt-1">
-            {isSuperAdmin
-              ? "Manage all trainees across the studio"
-              : "View and manage your assigned trainees"}
+            Manage your trainees and track their progress
           </p>
         </div>
-        {isAdmin && (
-          <Dialog
-            open={isAddClientDialogOpen}
-            onOpenChange={setIsAddClientDialogOpen}
-          >
-            <DialogTrigger asChild>
-              <Button>
-                <UserPlus className="h-4 w-4 mr-2" />
-                Add Client
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[500px]">
-              <DialogHeader>
-                <DialogTitle>Add New Client</DialogTitle>
-                <DialogDescription>
-                  Create a new trainee account
-                </DialogDescription>
-              </DialogHeader>
-              <form onSubmit={handleAddClient}>
-                <div className="space-y-4 pt-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Full Name</Label>
-                    <Input id="name" placeholder="John Doe" required />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="john@example.com"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">Phone Number</Label>
-                    <Input
-                      id="phone"
-                      type="tel"
-                      placeholder="+880 1234 567890"
-                      required
-                    />
-                  </div>
-                </div>
-                <DialogFooter className="mt-6">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setIsAddClientDialogOpen(false)}
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <Button>
+              <UserPlus className="h-4 w-4 mr-2" />
+              Add Trainee
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Add New Trainee</DialogTitle>
+              <DialogDescription>
+                Add a new trainee to your roster
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 pt-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">Full Name</Label>
+                <Input
+                  id="name"
+                  placeholder="John Doe"
+                  value={newTrainee.name}
+                  onChange={(e) =>
+                    setNewTrainee({ ...newTrainee, name: e.target.value })
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="john@example.com"
+                  value={newTrainee.email}
+                  onChange={(e) =>
+                    setNewTrainee({ ...newTrainee, email: e.target.value })
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="phone">Phone</Label>
+                <Input
+                  id="phone"
+                  placeholder="+1 (555) 000-0000"
+                  value={newTrainee.phone}
+                  onChange={(e) =>
+                    setNewTrainee({ ...newTrainee, phone: e.target.value })
+                  }
+                />
+              </div>
+              {isSuperAdmin && admins.length > 0 && (
+                <div className="space-y-2">
+                  <Label htmlFor="admin">Assign to Admin</Label>
+                  <Select
+                    value={newTrainee.assignedAdminId || ""}
+                    onValueChange={(value) =>
+                      setNewTrainee({
+                        ...newTrainee,
+                        assignedAdminId: value as Id<"users">,
+                      })
+                    }
                   >
-                    Cancel
-                  </Button>
-                  <Button type="submit">Add Client</Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
-        )}
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select an admin" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {admins.map((admin) => (
+                        <SelectItem key={admin._id} value={admin._id}>
+                          {admin.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleCreateTrainee}
+                disabled={!newTrainee.name || !newTrainee.email}
+              >
+                Add Trainee
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* Stats */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Clients</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Total Trainees
+            </CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {isSuperAdmin ? "127" : "45"}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {isSuperAdmin ? "All trainees" : "Your trainees"}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {isSuperAdmin ? "115" : "42"}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Currently enrolled
-            </p>
+            <div className="text-2xl font-bold">{trainees.length}</div>
+            <p className="text-xs text-muted-foreground">Active clients</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              New This Month
+              Active Workouts
             </CardTitle>
-            <UserPlus className="h-4 w-4 text-muted-foreground" />
+            <Dumbbell className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {isSuperAdmin ? "18" : "7"}
+              {trainees.reduce((sum, t) => sum + t.activeWorkouts, 0)}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              +12% from last month
-            </p>
+            <p className="text-xs text-muted-foreground">Total assignments</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Avg. Classes</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">
+              Class Enrollments
+            </CardTitle>
+            <Calendar className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">9.5</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Per client/month
-            </p>
+            <div className="text-2xl font-bold">
+              {trainees.reduce((sum, t) => sum + t.enrolledClasses, 0)}
+            </div>
+            <p className="text-xs text-muted-foreground">Active enrollments</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Avg Attendance
+            </CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {trainees.length > 0
+                ? Math.round(
+                    trainees.reduce((sum, t) => sum + t.attendanceRate, 0) /
+                      trainees.length
+                  )
+                : 0}
+              %
+            </div>
+            <p className="text-xs text-muted-foreground">Overall rate</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Search and Filter */}
+      {/* Client List */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>All Clients</CardTitle>
-            <Button variant="outline" size="sm">
-              <Filter className="h-4 w-4 mr-2" />
-              Filter
-            </Button>
+            <div>
+              <CardTitle>All Clients</CardTitle>
+              <CardDescription>
+                Manage and track your trainee roster
+              </CardDescription>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
+          {/* Search */}
           <div className="mb-4">
             <div className="relative">
               <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search clients by name or email..."
+                placeholder="Search by name or email..."
                 className="pl-9"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
           </div>
 
-          {/* Client List */}
-          <div className="space-y-3">
-            {mockClients.map((client) => (
-              <div
-                key={client.id}
-                className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent transition-colors cursor-pointer group"
-                onClick={() => navigate(`/clients/${client.id}`)}
+          {/* Trainee Grid */}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {filteredTrainees.map((trainee) => (
+              <Card
+                key={trainee._id}
+                className="hover:shadow-md transition-shadow cursor-pointer"
+                onClick={() => navigate(`/clients/${trainee._id}`)}
               >
-                <div className="flex items-center gap-4 flex-1">
-                  <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Users className="h-5 w-5 text-primary" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-medium">{client.name}</h3>
-                      <Badge
-                        variant={
-                          client.status === "Active" ? "default" : "secondary"
-                        }
-                      >
-                        {client.status}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground flex-wrap">
-                      <span className="flex items-center gap-1">
+                <CardContent className="p-6">
+                  <div className="flex items-start gap-4">
+                    <Avatar className="h-12 w-12">
+                      <AvatarImage src={trainee.profileImage} />
+                      <AvatarFallback>
+                        {getInitials(trainee.name)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 space-y-1">
+                      <h3 className="font-semibold">{trainee.name}</h3>
+                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
                         <Mail className="h-3 w-3" />
-                        {client.email}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Phone className="h-3 w-3" />
-                        {client.phone}
-                      </span>
+                        <span className="truncate">{trainee.email}</span>
+                      </div>
+                      {trainee.phone && (
+                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                          <Phone className="h-3 w-3" />
+                          <span>{trainee.phone}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
 
-                <div className="flex items-center gap-4">
-                  <div className="text-center hidden sm:block">
-                    <div className="text-sm font-medium">{client.classes}</div>
-                    <div className="text-xs text-muted-foreground">classes</div>
-                  </div>
-                  <div className="text-right hidden md:block">
-                    <div className="text-xs text-muted-foreground">Joined</div>
-                    <div className="text-sm font-medium">
-                      {new Date(client.joinDate).toLocaleDateString()}
+                  <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <div className="text-xl font-bold">
+                        {trainee.activeWorkouts}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Workouts
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xl font-bold">
+                        {trainee.enrolledClasses}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Classes
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xl font-bold">
+                        {trainee.attendanceRate}%
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Attendance
+                      </div>
                     </div>
                   </div>
-                  {isAdmin && (
-                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedClient(client);
-                          setIsAssignDialogOpen(true);
-                        }}
-                      >
-                        <Dumbbell className="h-3 w-3 mr-1" />
-                        Assign
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/clients/${client.id}`);
-                        }}
-                      >
-                        <Eye className="h-3 w-3 mr-1" />
-                        View
-                      </Button>
+
+                  {trainee.assignedAdminName && (
+                    <div className="mt-4 pt-4 border-t">
+                      <div className="text-xs text-muted-foreground">
+                        Assigned to: {trainee.assignedAdminName}
+                      </div>
                     </div>
                   )}
-                  {!isAdmin && (
-                    <Button variant="ghost" size="icon">
-                      <ArrowRight className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
+
+          {filteredTrainees.length === 0 && (
+            <div className="text-center py-12">
+              <Users className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
+              <h3 className="mt-4 text-lg font-semibold">No trainees found</h3>
+              <p className="text-muted-foreground">
+                {searchQuery
+                  ? "Try adjusting your search"
+                  : "Add your first trainee to get started"}
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
-
-      {/* Assign Workout Dialog */}
-      <Dialog open={isAssignDialogOpen} onOpenChange={setIsAssignDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>Assign Workout to {selectedClient?.name}</DialogTitle>
-            <DialogDescription>
-              Quickly assign a workout template to this trainee
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 pt-4">
-            <div className="space-y-2">
-              <Label>Workout Template</Label>
-              <Select
-                value={selectedWorkout}
-                onValueChange={setSelectedWorkout}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select workout" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableWorkouts.map((workout) => (
-                    <SelectItem key={workout.id} value={workout.id}>
-                      {workout.name} ({workout.type})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsAssignDialogOpen(false);
-                setSelectedClient(null);
-                setSelectedWorkout("");
-              }}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleAssignWorkout} disabled={!selectedWorkout}>
-              Assign Workout
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Super Admin Only Section */}
-      {isSuperAdmin && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Admin Management</CardTitle>
-            <CardDescription>
-              Assign clients to admins or update admin permissions
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-sm text-muted-foreground">
-              <p>This section is only visible to Super Admins.</p>
-              <p className="mt-2">Here you can:</p>
-              <ul className="list-disc list-inside mt-2 space-y-1">
-                <li>Assign clients to specific admins</li>
-                <li>View admin performance metrics</li>
-                <li>Manage admin permissions</li>
-              </ul>
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 };

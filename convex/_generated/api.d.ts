@@ -8,10 +8,17 @@
  * @module
  */
 
+import type * as attendance from "../attendance.js";
+import type * as classEnrollments from "../classEnrollments.js";
+import type * as classSessions from "../classSessions.js";
+import type * as classes from "../classes.js";
+import type * as dashboard from "../dashboard.js";
 import type * as exercises from "../exercises.js";
 import type * as seed from "../seed.js";
 import type * as test from "../test.js";
+import type * as trainees from "../trainees.js";
 import type * as user from "../user.js";
+import type * as workoutAssignments from "../workoutAssignments.js";
 import type * as workoutTemplates from "../workoutTemplates.js";
 
 import type {
@@ -29,10 +36,17 @@ import type {
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  attendance: typeof attendance;
+  classEnrollments: typeof classEnrollments;
+  classSessions: typeof classSessions;
+  classes: typeof classes;
+  dashboard: typeof dashboard;
   exercises: typeof exercises;
   seed: typeof seed;
   test: typeof test;
+  trainees: typeof trainees;
   user: typeof user;
+  workoutAssignments: typeof workoutAssignments;
   workoutTemplates: typeof workoutTemplates;
 }>;
 declare const fullApiWithMounts: typeof fullApi;

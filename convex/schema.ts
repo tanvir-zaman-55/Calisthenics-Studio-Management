@@ -192,6 +192,24 @@ export default defineSchema({
     .index("by_trainee", ["traineeId"])
     .index("by_date", ["scheduleDate"]),
 
+  classSessions: defineTable({
+    classId: v.id("classes"),
+    sessionDate: v.number(),
+    startTime: v.string(), // "09:00"
+    endTime: v.string(), // "10:30"
+    location: v.optional(v.string()),
+    maxCapacity: v.optional(v.number()),
+    status: v.union(
+      v.literal("scheduled"),
+      v.literal("completed"),
+      v.literal("cancelled")
+    ),
+    notes: v.optional(v.string()),
+  })
+    .index("by_class", ["classId"])
+    .index("by_status", ["status"])
+    .index("by_date", ["sessionDate"]),
+
   // 10. PROGRESS MEASUREMENTS TABLE
   progressMeasurements: defineTable({
     traineeId: v.id("users"),

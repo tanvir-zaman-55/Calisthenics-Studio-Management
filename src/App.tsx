@@ -2,8 +2,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { ConvexProvider, ConvexReactClient } from "convex/react"; // ← NEW
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { ConvexProvider, ConvexReactClient } from "convex/react";
 import Layout from "./components/layout/Layout";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
@@ -16,11 +16,12 @@ import Admins from "./pages/Admins";
 import Workouts from "./pages/Workouts";
 import TraineeWorkouts from "./pages/TraineeWorkouts";
 import Settings from "./pages/Settings";
+import Attendance from "./pages/Attendance";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 
 const queryClient = new QueryClient();
 
-// ← NEW: Initialize Convex client
+// Initialize Convex client
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL);
 
 // Wrapper component to handle role-based routing for workouts
@@ -29,10 +30,15 @@ const WorkoutsRoute = () => {
   return isTrainee ? <TraineeWorkouts /> : <Workouts />;
 };
 
+// Wrapper component for attendance route
+const AttendanceRoute = () => {
+  const { currentUser } = useAuth();
+  if (!currentUser) return <Navigate to="/" replace />;
+  return <Attendance />;
+};
+
 const App = () => (
   <ConvexProvider client={convex}>
-    {" "}
-    {/* ← NEW: Wrap entire app */}
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
@@ -54,6 +60,7 @@ const App = () => (
                 <Route path="/classes" element={<Classes />} />
                 <Route path="/schedule" element={<Schedule />} />
                 <Route path="/admins" element={<Admins />} />
+                <Route path="/attendance" element={<AttendanceRoute />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>

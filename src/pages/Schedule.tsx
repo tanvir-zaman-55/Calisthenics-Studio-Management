@@ -11,8 +11,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
-import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -22,264 +29,428 @@ import {
   DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/context/AuthContext";
 import {
   Calendar as CalendarIcon,
   Clock,
-  Users,
   MapPin,
+  Users,
   ChevronLeft,
   ChevronRight,
   Plus,
 } from "lucide-react";
-
-// Mock schedule data
-const mockSchedule = {
-  Monday: [
-    {
-      id: "1",
-      time: "9:00 AM",
-      class: "Core Fundamentals",
-      type: "Core",
-      instructor: "Admin User",
-      enrolled: 12,
-      capacity: 15,
-      location: "Studio A",
-    },
-    {
-      id: "2",
-      time: "6:00 PM",
-      class: "Upper Body Mastery",
-      type: "Upper Body",
-      instructor: "Admin User",
-      enrolled: 12,
-      capacity: 12,
-      location: "Studio A",
-    },
-  ],
-  Tuesday: [
-    {
-      id: "3",
-      time: "6:00 PM",
-      class: "Upper Body Mastery",
-      type: "Upper Body",
-      instructor: "Admin User",
-      enrolled: 12,
-      capacity: 12,
-      location: "Studio A",
-    },
-  ],
-  Wednesday: [
-    {
-      id: "4",
-      time: "9:00 AM",
-      class: "Core Fundamentals",
-      type: "Core",
-      instructor: "Admin User",
-      enrolled: 12,
-      capacity: 15,
-      location: "Studio A",
-    },
-    {
-      id: "5",
-      time: "7:00 PM",
-      class: "Advanced Core",
-      type: "Core",
-      instructor: "Admin User",
-      enrolled: 8,
-      capacity: 10,
-      location: "Studio B",
-    },
-  ],
-  Thursday: [
-    {
-      id: "6",
-      time: "6:00 PM",
-      class: "Upper Body Mastery",
-      type: "Upper Body",
-      instructor: "Admin User",
-      enrolled: 12,
-      capacity: 12,
-      location: "Studio A",
-    },
-  ],
-  Friday: [
-    {
-      id: "7",
-      time: "9:00 AM",
-      class: "Core Fundamentals",
-      type: "Core",
-      instructor: "Admin User",
-      enrolled: 12,
-      capacity: 15,
-      location: "Studio A",
-    },
-    {
-      id: "8",
-      time: "7:00 PM",
-      class: "Advanced Core",
-      type: "Core",
-      instructor: "Admin User",
-      enrolled: 8,
-      capacity: 10,
-      location: "Studio B",
-    },
-  ],
-  Saturday: [
-    {
-      id: "9",
-      time: "10:00 AM",
-      class: "Leg Day Power",
-      type: "Legs",
-      instructor: "Admin User",
-      enrolled: 10,
-      capacity: 15,
-      location: "Studio A",
-    },
-  ],
-  Sunday: [],
-};
-
-// Trainee's enrolled classes
-const traineeEnrolled = ["1", "3", "7", "9"];
+import { useQuery, useMutation } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 
 const Schedule = () => {
-  const { isSuperAdmin, isAdmin, isTrainee, currentUser } = useAuth();
+  const { isTrainee, isAdmin, currentUser } = useAuth();
   const [date, setDate] = useState<Date | undefined>(new Date());
-  const [selectedDay, setSelectedDay] = useState("Monday");
-  const [isAddSessionDialogOpen, setIsAddSessionDialogOpen] = useState(false);
+  const [currentWeek, setCurrentWeek] = useState(0);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
 
-  const days = [
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-  ];
+  // Get trainee's enrolled classes
+  const myEnrollments =
+    useQuery(
+      api.classEnrollments.getTraineeEnrollments,
+      currentUser && isTrainee ? { traineeId: currentUser._id } : "skip"
+    ) ?? [];
 
-  const typeColors = {
-    Core: "bg-orange-500",
-    "Upper Body": "bg-cyan-500",
-    Legs: "bg-pink-500",
+  // Get all classes for admin
+  const classes = useQuery(api.classes.getAllClasses) ?? [];
+
+  // Get trainee's upcoming sessions
+  const upcomingSessions =
+    useQuery(
+      api.classSessions.getTraineeUpcomingSessions,
+      currentUser && isTrainee ? { traineeId: currentUser._id } : "skip"
+    ) ?? [];
+
+  // Get sessions for current week
+  // Get sessions for current week
+  const weekDates = getWeekDates(currentWeek);
+  const weekStart = new Date(
+    weekDates[0].getFullYear(),
+    weekDates[0].getMonth(),
+    weekDates[0].getDate()
+  ).getTime();
+  const weekEnd = new Date(
+    weekDates[6].getFullYear(),
+    weekDates[6].getMonth(),
+    weekDates[6].getDate(),
+    23,
+    59,
+    59
+  ).getTime();
+
+  const allWeekSessions =
+    useQuery(api.classSessions.getSessionsByDateRange, {
+      startDate: weekStart,
+      endDate: weekEnd,
+    }) ?? [];
+
+  // Filter sessions for trainees - only show enrolled classes
+  const weekSessions =
+    useQuery(
+      api.classSessions.getSessionsByDateRange,
+      currentUser
+        ? {
+            startDate: weekStart,
+            endDate: weekEnd,
+            instructorId: currentUser._id,
+            role: currentUser.role,
+          }
+        : "skip"
+    ) ?? [];
+
+  // Mutations
+  const createSession = useMutation(api.classSessions.createSession);
+  const createRecurringSessions = useMutation(
+    api.classSessions.createRecurringSessions
+  );
+
+  // Form state for creating sessions
+  const [sessionForm, setSessionForm] = useState({
+    classId: "" as Id<"classes"> | "",
+    sessionDate: Date.now(),
+    startTime: "09:00",
+    endTime: "10:30",
+    location: "",
+    isRecurring: false,
+    weeksCount: 4,
+    selectedDays: [] as number[],
+  });
+
+  function getWeekDates(weekOffset: number) {
+    const today = new Date();
+    const currentDay = today.getDay();
+    const diff = today.getDate() - currentDay + weekOffset * 7;
+    const sunday = new Date(today.setDate(diff));
+
+    return Array.from({ length: 7 }, (_, i) => {
+      const date = new Date(sunday);
+      date.setDate(sunday.getDate() + i);
+      return date;
+    });
+  }
+
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  const formatDate = (date: Date) => {
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
   };
 
-  const getCurrentDaySchedule = () => {
-    const schedule = mockSchedule[selectedDay as keyof typeof mockSchedule];
-    if (isTrainee) {
-      // Only show classes the trainee is enrolled in
-      return schedule.filter((session) => traineeEnrolled.includes(session.id));
+  const isToday = (date: Date) => {
+    const today = new Date();
+    return (
+      date.getDate() === today.getDate() &&
+      date.getMonth() === today.getMonth() &&
+      date.getFullYear() === today.getFullYear()
+    );
+  };
+
+  const toggleDay = (dayIndex: number) => {
+    const days = sessionForm.selectedDays;
+    if (days.includes(dayIndex)) {
+      setSessionForm({
+        ...sessionForm,
+        selectedDays: days.filter((d) => d !== dayIndex),
+      });
+    } else {
+      setSessionForm({
+        ...sessionForm,
+        selectedDays: [...days, dayIndex],
+      });
     }
-    return schedule;
+  };
+
+  const handleCreateSession = async () => {
+    if (!sessionForm.classId) {
+      alert("Please select a class");
+      return;
+    }
+
+    try {
+      if (sessionForm.isRecurring) {
+        if (sessionForm.selectedDays.length === 0) {
+          alert("Please select at least one day");
+          return;
+        }
+
+        await createRecurringSessions({
+          classId: sessionForm.classId,
+          startDate: sessionForm.sessionDate,
+          weeksCount: sessionForm.weeksCount,
+          daysOfWeek: sessionForm.selectedDays,
+          startTime: sessionForm.startTime,
+          endTime: sessionForm.endTime,
+          location: sessionForm.location,
+        });
+
+        alert(`Created ${sessionForm.weeksCount} weeks of sessions!`);
+      } else {
+        await createSession({
+          classId: sessionForm.classId,
+          sessionDate: sessionForm.sessionDate,
+          startTime: sessionForm.startTime,
+          endTime: sessionForm.endTime,
+          location: sessionForm.location,
+        });
+
+        alert("Session created!");
+      }
+
+      setIsCreateDialogOpen(false);
+      setSessionForm({
+        classId: "",
+        sessionDate: Date.now(),
+        startTime: "09:00",
+        endTime: "10:30",
+        location: "",
+        isRecurring: false,
+        weeksCount: 4,
+        selectedDays: [],
+      });
+    } catch (error) {
+      console.error("Error creating session:", error);
+      alert("Failed to create session");
+    }
+  };
+
+  const getSessionsForDate = (date: Date) => {
+    const dateTime = new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate()
+    ).getTime();
+
+    return weekSessions.filter((session) => {
+      const sessionDate = new Date(session.sessionDate);
+      return (
+        sessionDate.getDate() === date.getDate() &&
+        sessionDate.getMonth() === date.getMonth() &&
+        sessionDate.getFullYear() === date.getFullYear()
+      );
+    });
   };
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Schedule</h1>
           <p className="text-muted-foreground mt-1">
-            {isSuperAdmin
-              ? "Manage all studio schedules"
-              : isAdmin
-              ? "Manage your class schedules"
-              : "View your class schedule"}
+            {isTrainee
+              ? "View your class schedule"
+              : "Manage class sessions and schedule"}
           </p>
         </div>
         {isAdmin && (
           <Dialog
-            open={isAddSessionDialogOpen}
-            onOpenChange={setIsAddSessionDialogOpen}
+            open={isCreateDialogOpen}
+            onOpenChange={setIsCreateDialogOpen}
           >
             <DialogTrigger asChild>
               <Button>
                 <Plus className="h-4 w-4 mr-2" />
-                Add Session
+                Schedule Session
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[500px]">
               <DialogHeader>
-                <DialogTitle>Add New Session</DialogTitle>
+                <DialogTitle>Schedule Class Session</DialogTitle>
                 <DialogDescription>
-                  Create a new class session
+                  Create a single session or recurring sessions
                 </DialogDescription>
               </DialogHeader>
+
               <div className="space-y-4 pt-4">
                 <div className="space-y-2">
-                  <Label htmlFor="class-name">Class Name</Label>
-                  <Input
-                    id="class-name"
-                    placeholder="e.g., Core Fundamentals"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="class-type">Type</Label>
-                    <Select>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="core">Core</SelectItem>
-                        <SelectItem value="upper">Upper Body</SelectItem>
-                        <SelectItem value="legs">Legs</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="time">Time</Label>
-                    <Input id="time" type="time" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="location">Location</Label>
-                    <Input id="location" placeholder="Studio A" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="capacity">Capacity</Label>
-                    <Input id="capacity" type="number" placeholder="15" />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="day">Day</Label>
-                  <Select>
+                  <Label>Class</Label>
+                  <Select
+                    value={sessionForm.classId || ""}
+                    onValueChange={(value) =>
+                      setSessionForm({
+                        ...sessionForm,
+                        classId: value as Id<"classes">,
+                      })
+                    }
+                  >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select day" />
+                      <SelectValue placeholder="Select a class" />
                     </SelectTrigger>
                     <SelectContent>
-                      {days.map((day) => (
-                        <SelectItem key={day} value={day.toLowerCase()}>
-                          {day}
+                      {classes.map((classItem) => (
+                        <SelectItem key={classItem._id} value={classItem._id}>
+                          {classItem.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
+
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="recurring"
+                    checked={sessionForm.isRecurring}
+                    onCheckedChange={(checked) =>
+                      setSessionForm({
+                        ...sessionForm,
+                        isRecurring: checked === true,
+                      })
+                    }
+                  />
+                  <label
+                    htmlFor="recurring"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    Recurring Sessions
+                  </label>
+                </div>
+
+                {sessionForm.isRecurring ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Start Date</Label>
+                      <Input
+                        type="date"
+                        value={
+                          new Date(sessionForm.sessionDate)
+                            .toISOString()
+                            .split("T")[0]
+                        }
+                        onChange={(e) =>
+                          setSessionForm({
+                            ...sessionForm,
+                            sessionDate: new Date(e.target.value).getTime(),
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Number of Weeks</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="52"
+                        value={sessionForm.weeksCount}
+                        onChange={(e) =>
+                          setSessionForm({
+                            ...sessionForm,
+                            weeksCount: parseInt(e.target.value) || 1,
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Days of Week</Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {dayNames.map((day, index) => (
+                          <div
+                            key={day}
+                            className="flex items-center space-x-2"
+                          >
+                            <Checkbox
+                              id={`day-${index}`}
+                              checked={sessionForm.selectedDays.includes(index)}
+                              onCheckedChange={() => toggleDay(index)}
+                            />
+                            <label
+                              htmlFor={`day-${index}`}
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                            >
+                              {day}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-2">
+                    <Label>Session Date</Label>
+                    <Input
+                      type="date"
+                      value={
+                        new Date(sessionForm.sessionDate)
+                          .toISOString()
+                          .split("T")[0]
+                      }
+                      onChange={(e) =>
+                        setSessionForm({
+                          ...sessionForm,
+                          sessionDate: new Date(e.target.value).getTime(),
+                        })
+                      }
+                    />
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Start Time</Label>
+                    <Input
+                      type="time"
+                      value={sessionForm.startTime}
+                      onChange={(e) =>
+                        setSessionForm({
+                          ...sessionForm,
+                          startTime: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>End Time</Label>
+                    <Input
+                      type="time"
+                      value={sessionForm.endTime}
+                      onChange={(e) =>
+                        setSessionForm({
+                          ...sessionForm,
+                          endTime: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Location (Optional)</Label>
+                  <Input
+                    placeholder="Studio A"
+                    value={sessionForm.location}
+                    onChange={(e) =>
+                      setSessionForm({
+                        ...sessionForm,
+                        location: e.target.value,
+                      })
+                    }
+                  />
+                </div>
               </div>
+
               <DialogFooter>
                 <Button
                   variant="outline"
-                  onClick={() => setIsAddSessionDialogOpen(false)}
+                  onClick={() => setIsCreateDialogOpen(false)}
                 >
                   Cancel
                 </Button>
                 <Button
-                  onClick={() => {
-                    console.log("Adding session");
-                    setIsAddSessionDialogOpen(false);
-                  }}
+                  onClick={handleCreateSession}
+                  disabled={!sessionForm.classId}
                 >
-                  Add Session
+                  {sessionForm.isRecurring
+                    ? `Create ${sessionForm.weeksCount} Weeks`
+                    : "Create Session"}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -287,214 +458,175 @@ const Schedule = () => {
         )}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[350px_1fr]">
+      {/* Main Layout */}
+      <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
         {/* Calendar Sidebar */}
         <div className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Calendar</CardTitle>
-              <CardDescription>Select a date to view schedule</CardDescription>
+              <CardTitle className="text-base">Calendar</CardTitle>
             </CardHeader>
-            <CardContent className="p-3">
+            <CardContent>
               <Calendar
                 mode="single"
                 selected={date}
-                onSelect={setDate}
-                className="rounded-md border w-full"
+                onSelect={(selectedDate) => {
+                  if (selectedDate) {
+                    setDate(selectedDate);
+
+                    // Calculate which week offset this date is in
+                    const today = new Date();
+                    const daysDiff = Math.floor(
+                      (selectedDate.getTime() - today.getTime()) /
+                        (1000 * 60 * 60 * 24)
+                    );
+                    const weeksDiff = Math.floor(daysDiff / 7);
+                    setCurrentWeek(weeksDiff);
+                  }
+                }}
+                className="rounded-md"
               />
             </CardContent>
           </Card>
 
-          {/* Legend Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Class Types</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex items-center gap-2 text-sm">
-                <div className="h-3 w-3 rounded-full bg-orange-500" />
-                <span>Core Day</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                <div className="h-3 w-3 rounded-full bg-cyan-500" />
-                <span>Upper Body</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                <div className="h-3 w-3 rounded-full bg-pink-500" />
-                <span>Legs Day</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Trainee Summary */}
+          {/* Trainee's Upcoming Sessions */}
           {isTrainee && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm">My Schedule Summary</CardTitle>
+                <CardTitle className="text-base">Upcoming Sessions</CardTitle>
+                <CardDescription>Next 2 weeks</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Classes This Week</span>
-                  <Badge>4 classes</Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Total Hours</span>
-                  <Badge variant="secondary">6 hours</Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Next Class</span>
-                  <Badge variant="outline">Mon 9:00 AM</Badge>
+              <CardContent>
+                <div className="space-y-3">
+                  {upcomingSessions.length > 0 ? (
+                    upcomingSessions.slice(0, 5).map((session) => (
+                      <div
+                        key={session._id}
+                        className="p-3 rounded-lg border bg-card text-card-foreground"
+                      >
+                        <div className="font-medium text-sm">
+                          {session.className}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {new Date(session.sessionDate).toLocaleDateString(
+                            "en-US",
+                            {
+                              weekday: "short",
+                              month: "short",
+                              day: "numeric",
+                            }
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {session.startTime} - {session.endTime}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-sm text-muted-foreground text-center py-4">
+                      No upcoming sessions
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
           )}
         </div>
 
-        {/* Schedule View */}
-        <div className="space-y-4">
-          {/* Day Selector */}
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between mb-4">
+        {/* Weekly Schedule */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Weekly Schedule</CardTitle>
+                <CardDescription>
+                  {formatDate(weekDates[0])} - {formatDate(weekDates[6])}
+                </CardDescription>
+              </div>
+              <div className="flex gap-2">
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="icon"
-                  onClick={() => {
-                    const currentIndex = days.indexOf(selectedDay);
-                    setSelectedDay(
-                      days[
-                        currentIndex === 0 ? days.length - 1 : currentIndex - 1
-                      ]
-                    );
-                  }}
+                  onClick={() => setCurrentWeek(currentWeek - 1)}
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <h2 className="text-xl font-bold">{selectedDay}</h2>
                 <Button
-                  variant="ghost"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentWeek(0)}
+                >
+                  Today
+                </Button>
+                <Button
+                  variant="outline"
                   size="icon"
-                  onClick={() => {
-                    const currentIndex = days.indexOf(selectedDay);
-                    setSelectedDay(
-                      days[
-                        currentIndex === days.length - 1 ? 0 : currentIndex + 1
-                      ]
-                    );
-                  }}
+                  onClick={() => setCurrentWeek(currentWeek + 1)}
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
-
-              {/* Day Pills */}
-              <div className="flex flex-wrap gap-2">
-                {days.map((day) => (
-                  <Button
-                    key={day}
-                    variant={selectedDay === day ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setSelectedDay(day)}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {/* Day Headers */}
+              <div className="grid grid-cols-7 gap-2">
+                {weekDates.map((date, index) => (
+                  <div
+                    key={index}
+                    className={`text-center p-3 rounded-lg ${
+                      isToday(date)
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted"
+                    }`}
                   >
-                    {day.slice(0, 3)}
-                  </Button>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Sessions */}
-          <div className="space-y-3">
-            {getCurrentDaySchedule().length === 0 ? (
-              <Card>
-                <CardContent className="pt-6 text-center text-muted-foreground py-12">
-                  <CalendarIcon className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                  <p className="text-lg font-medium">No classes scheduled</p>
-                  <p className="text-sm">for {selectedDay}</p>
-                </CardContent>
-              </Card>
-            ) : (
-              getCurrentDaySchedule().map((session) => (
-                <Card key={session.id} className="overflow-hidden">
-                  <div className="flex">
-                    <div
-                      className={`w-1 ${
-                        typeColors[session.type as keyof typeof typeColors]
-                      }`}
-                    />
-                    <div className="flex-1 p-4">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="space-y-3 flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="font-semibold text-lg">
-                              {session.class}
-                            </h3>
-                            {isTrainee &&
-                              traineeEnrolled.includes(session.id) && (
-                                <Badge>Enrolled</Badge>
-                              )}
-                          </div>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-muted-foreground">
-                            <div className="flex items-center gap-2">
-                              <Clock className="h-4 w-4 flex-shrink-0" />
-                              <span>{session.time}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <MapPin className="h-4 w-4 flex-shrink-0" />
-                              <span>{session.location}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Users className="h-4 w-4 flex-shrink-0" />
-                              <span>
-                                {session.enrolled}/{session.capacity} enrolled
-                              </span>
-                            </div>
-                            {(isAdmin || isSuperAdmin) && (
-                              <div className="text-sm truncate">
-                                Instructor: {session.instructor}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Progress Bar */}
-                          <div className="pt-1">
-                            <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
-                              <div
-                                className={`h-full ${
-                                  typeColors[
-                                    session.type as keyof typeof typeColors
-                                  ]
-                                }`}
-                                style={{
-                                  width: `${
-                                    (session.enrolled / session.capacity) * 100
-                                  }%`,
-                                }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex-shrink-0">
-                          {isAdmin && (
-                            <Button variant="ghost" size="sm">
-                              Manage
-                            </Button>
-                          )}
-                          {isTrainee &&
-                            !traineeEnrolled.includes(session.id) && (
-                              <Button size="sm">Enroll</Button>
-                            )}
-                        </div>
-                      </div>
+                    <div className="text-xs font-medium">{dayNames[index]}</div>
+                    <div className="text-lg font-bold mt-1">
+                      {date.getDate()}
                     </div>
                   </div>
-                </Card>
-              ))
-            )}
-          </div>
-        </div>
+                ))}
+              </div>
+
+              {/* Sessions Grid */}
+              <div className="grid grid-cols-7 gap-2">
+                {weekDates.map((date, index) => {
+                  const daySessions = getSessionsForDate(date);
+
+                  return (
+                    <div key={index} className="space-y-2 min-h-[100px]">
+                      {daySessions.length > 0 ? (
+                        daySessions.map((session) => (
+                          <Card
+                            key={session._id}
+                            className="p-2 bg-primary/10 border-primary/20 hover:bg-primary/20 transition-colors cursor-pointer"
+                          >
+                            <div className="text-xs font-medium truncate">
+                              {session.class?.name}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {session.startTime}- {session.endTime}
+                            </div>
+                            {session.location && (
+                              <div className="text-xs text-muted-foreground truncate">
+                                📍 {session.location}
+                              </div>
+                            )}
+                          </Card>
+                        ))
+                      ) : (
+                        <div className="text-xs text-muted-foreground text-center py-4">
+                          No sessions
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

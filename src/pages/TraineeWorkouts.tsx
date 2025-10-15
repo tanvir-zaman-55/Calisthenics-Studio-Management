@@ -38,6 +38,7 @@ import {
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { useAuth } from "@/context/AuthContext";
 
 interface Exercise {
   _id: Id<"exercises">;
@@ -65,7 +66,11 @@ interface WorkoutTemplate {
   difficulty: string;
   duration: number;
   exercises: WorkoutExercise[];
-  createdAt: string;
+  createdAt: number;
+  assignmentId?: Id<"workoutAssignments">;
+  assignedByName?: string;
+  scheduledDays?: string[];
+  assignmentNotes?: string;
 }
 
 interface WorkoutLog {
@@ -89,8 +94,37 @@ export default function TraineeWorkouts() {
   const [workoutStartTime, setWorkoutStartTime] = useState<number | null>(null);
 
   // Load data from Convex
-  const exercises = useQuery(api.exercises.getAllExercises) ?? [];
-  const workoutTemplates = useQuery(api.workoutTemplates.getAllTemplates) ?? [];
+  // NEW - Load assigned workouts only
+  const { currentUser } = useAuth();
+  const exercises =
+    useQuery(
+      api.exercises.getAllExercises,
+      currentUser
+        ? {
+            creatorId: currentUser._id,
+            role: currentUser.role,
+          }
+        : "skip"
+    ) ?? [];
+
+  // Get assignments for this trainee
+  const myAssignments =
+    useQuery(
+      api.workoutAssignments.getTraineeAssignments,
+      currentUser ? { traineeId: currentUser._id } : "skip"
+    ) ?? [];
+
+  // Extract templates from assignments
+  // Extract templates with assignment info
+  const workoutTemplates: WorkoutTemplate[] = myAssignments
+    .filter((assignment) => assignment.template)
+    .map((assignment) => ({
+      ...assignment.template!,
+      assignmentId: assignment._id,
+      assignedByName: assignment.assignedByName,
+      scheduledDays: assignment.scheduledDays,
+      assignmentNotes: assignment.notes,
+    }));
 
   // Keep workoutLogs in localStorage for now (we'll migrate this later)
   const [workoutLogs, setWorkoutLogs] = useState<WorkoutLog[]>([]);
@@ -402,15 +436,62 @@ export default function TraineeWorkouts() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="flex items-center gap-4 text-sm">
-                      <div className="flex items-center gap-1">
-                        <Clock className="h-4 w-4" />
-                        <span>{todaysWorkout.duration} min</span>
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-4 text-sm flex-wrap">
+                        <div className="flex items-center gap-1">
+                          <Clock className="h-4 w-4" />
+                          <span>{todaysWorkout.duration} min</span>
+                        </div>
+                        <Badge>{todaysWorkout.difficulty}</Badge>
+                        <Badge variant="outline">
+                          {todaysWorkout.exercises?.length || 0} exercises
+                        </Badge>
                       </div>
-                      <Badge>{todaysWorkout.difficulty}</Badge>
-                      <Badge variant="outline">
-                        {todaysWorkout.exercises?.length || 0} exercises
-                      </Badge>
+
+                      {/* Show schedule */}
+                      {todaysWorkout.scheduledDays &&
+                        todaysWorkout.scheduledDays.length > 0 && (
+                          <div className="flex items-start gap-2 text-sm">
+                            <Calendar className="h-4 w-4 text-muted-foreground mt-0.5" />
+                            <div>
+                              <div className="font-medium text-xs text-muted-foreground mb-1">
+                                Scheduled Days:
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {todaysWorkout.scheduledDays.map((day) => (
+                                  <Badge
+                                    key={day}
+                                    variant="secondary"
+                                    className="text-xs"
+                                  >
+                                    {day}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                      {/* Show assignment notes */}
+                      {todaysWorkout.assignmentNotes && (
+                        <div className="flex items-start gap-2 text-sm p-2 bg-muted rounded">
+                          <AlertCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                          <div>
+                            <div className="font-medium text-xs mb-0.5">
+                              Trainer Notes:
+                            </div>
+                            <div className="text-muted-foreground">
+                              {todaysWorkout.assignmentNotes}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {todaysWorkout.assignedByName && (
+                        <div className="text-xs text-muted-foreground">
+                          Assigned by {todaysWorkout.assignedByName}
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-2">
@@ -474,15 +555,26 @@ export default function TraineeWorkouts() {
                   <CardDescription>{template.description}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="flex items-center gap-4 text-sm">
-                    <div className="flex items-center gap-1">
-                      <Clock className="h-4 w-4" />
-                      <span>{template.duration} min</span>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-4 text-sm flex-wrap">
+                      <div className="flex items-center gap-1">
+                        <Clock className="h-4 w-4" />
+                        <span>{template.duration} min</span>
+                      </div>
+                      <Badge>{template.difficulty}</Badge>
+                      <Badge variant="outline">
+                        {template.exercises?.length || 0} exercises
+                      </Badge>
                     </div>
-                    <Badge>{template.difficulty}</Badge>
-                    <Badge variant="outline">
-                      {template.exercises?.length || 0} exercises
-                    </Badge>
+
+                    {/* Show schedule */}
+                    {template.scheduledDays &&
+                      template.scheduledDays.length > 0 && (
+                        <div className="text-xs text-muted-foreground">
+                          <Calendar className="h-3 w-3 inline mr-1" />
+                          {template.scheduledDays.join(", ")}
+                        </div>
+                      )}
                   </div>
 
                   <Button

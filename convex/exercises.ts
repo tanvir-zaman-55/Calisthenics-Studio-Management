@@ -2,9 +2,21 @@ import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 
 // Get all exercises
+// Get all exercises (filtered by creator for regular admins)
 export const getAllExercises = query({
-  handler: async (ctx) => {
-    return await ctx.db.query("exercises").order("desc").collect();
+  args: {
+    creatorId: v.optional(v.id("users")),
+    role: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    let exercises = await ctx.db.query("exercises").collect();
+
+    // Filter for regular admins - only show exercises they created
+    if (args.role === "admin" && args.creatorId) {
+      exercises = exercises.filter((e) => e.createdBy === args.creatorId);
+    }
+
+    return exercises;
   },
 });
 

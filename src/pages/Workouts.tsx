@@ -25,6 +25,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -85,16 +86,51 @@ const Workouts = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [viewTemplateId, setViewTemplateId] =
+    useState<Id<"workoutTemplates"> | null>(null); // ← ADD
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false); // ← ADD
+  const [assignTemplateId, setAssignTemplateId] =
+    useState<Id<"workoutTemplates"> | null>(null); // ← ADD
+  const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false); // ← ADD
 
   // Load data from Convex (replaces localStorage)
-  const exercises = useQuery(api.exercises.getAllExercises) ?? [];
+  // Load data from Convex (replaces localStorage)
+  const exercises =
+    useQuery(
+      api.exercises.getAllExercises,
+      currentUser
+        ? {
+            creatorId: currentUser._id,
+            role: currentUser.role,
+          }
+        : "skip"
+    ) ?? [];
   const workoutTemplates = useQuery(api.workoutTemplates.getAllTemplates) ?? [];
   const createTemplate = useMutation(api.workoutTemplates.createTemplate);
   const deleteTemplate = useMutation(api.workoutTemplates.deleteTemplate);
+  const assignmentStats = useQuery(
+    api.workoutAssignments.getAssignmentStats,
+    currentUser
+      ? {
+          adminId: currentUser._id,
+          role: currentUser.role,
+        }
+      : "skip"
+  );
+
+  // Query for viewing template details // ← ADD
+  const viewTemplate = useQuery(
+    api.workoutTemplates.getTemplateWithExercises,
+    viewTemplateId ? { templateId: viewTemplateId } : "skip"
+  );
+
+  const allTrainees =
+    useQuery(api.user.getUsersByRole, { role: "trainee" }) ?? [];
 
   // Mutations
   const createExercise = useMutation(api.exercises.createExercise);
   const deleteExercise = useMutation(api.exercises.deleteExercise);
+  const assignWorkout = useMutation(api.workoutAssignments.assignWorkout);
 
   // Form state for new exercise
   const [newExercise, setNewExercise] = useState({
@@ -120,6 +156,14 @@ const Workouts = () => {
       rest: number;
       notes?: string;
     }>,
+  });
+
+  // NEW: Form state for workout assignment
+  const [assignmentForm, setAssignmentForm] = useState({
+    traineeId: "" as Id<"users">,
+    scheduledDays: [] as string[],
+    startDate: Date.now(),
+    notes: "",
   });
 
   // NEW: Temporary exercise being added to template
@@ -232,6 +276,71 @@ const Workouts = () => {
     });
   };
 
+  const handleViewTemplate = (templateId: Id<"workoutTemplates">) => {
+    setViewTemplateId(templateId);
+    setIsViewDialogOpen(true);
+  };
+
+  const handleOpenAssignDialog = (templateId: Id<"workoutTemplates">) => {
+    setAssignTemplateId(templateId);
+    setIsAssignDialogOpen(true);
+  };
+
+  const handleAssignWorkout = async () => {
+    if (!currentUser || !assignTemplateId) return;
+
+    if (!assignmentForm.traineeId) {
+      alert("Please select a trainee");
+      return;
+    }
+
+    if (assignmentForm.scheduledDays.length === 0) {
+      alert("Please select at least one day");
+      return;
+    }
+
+    try {
+      await assignWorkout({
+        traineeId: assignmentForm.traineeId,
+        templateId: assignTemplateId,
+        assignedBy: currentUser._id,
+        scheduledDays: assignmentForm.scheduledDays,
+        startDate: assignmentForm.startDate,
+        notes: assignmentForm.notes,
+      });
+
+      // Reset form and close dialog
+      setAssignmentForm({
+        traineeId: "" as Id<"users">,
+        scheduledDays: [],
+        startDate: Date.now(),
+        notes: "",
+      });
+      setIsAssignDialogOpen(false);
+
+      alert("Workout assigned successfully!");
+    } catch (error) {
+      console.error("Error assigning workout:", error);
+      alert(
+        error instanceof Error ? error.message : "Failed to assign workout"
+      );
+    }
+  };
+
+  const toggleScheduledDay = (day: string) => {
+    const days = assignmentForm.scheduledDays;
+    if (days.includes(day)) {
+      setAssignmentForm({
+        ...assignmentForm,
+        scheduledDays: days.filter((d) => d !== day),
+      });
+    } else {
+      setAssignmentForm({
+        ...assignmentForm,
+        scheduledDays: [...days, day],
+      });
+    }
+  };
   // Remove the old useEffect and loadData function
 
   const difficultyColors = {
@@ -485,7 +594,9 @@ const Workouts = () => {
             <Target className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">-</div>
+            <div className="text-2xl font-bold">
+              {assignmentStats?.activeAssignments ?? 0}
+            </div>
             <p className="text-xs text-muted-foreground mt-1">To trainees</p>
           </CardContent>
         </Card>
@@ -498,7 +609,16 @@ const Workouts = () => {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">-</div>
+            <div className="text-2xl font-bold">
+              {assignmentStats && assignmentStats.totalAssignments > 0
+                ? Math.round(
+                    (assignmentStats.completedAssignments /
+                      assignmentStats.totalAssignments) *
+                      100
+                  )
+                : 0}
+              %
+            </div>
             <p className="text-xs text-muted-foreground mt-1">Average rate</p>
           </CardContent>
         </Card>
@@ -1006,11 +1126,18 @@ const Workouts = () => {
                             variant="outline"
                             size="sm"
                             className="flex-1"
+                            onClick={() => handleViewTemplate(template._id)}
                           >
                             View
                           </Button>
                           {isAdmin && (
-                            <Button size="sm" className="flex-1">
+                            <Button
+                              size="sm"
+                              className="flex-1"
+                              onClick={() =>
+                                handleOpenAssignDialog(template._id)
+                              }
+                            >
                               Assign
                             </Button>
                           )}
@@ -1032,6 +1159,251 @@ const Workouts = () => {
           </Card>
         </TabsContent>
       </Tabs>
+      <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{viewTemplate?.name}</DialogTitle>
+            <DialogDescription>{viewTemplate?.description}</DialogDescription>
+          </DialogHeader>
+
+          {viewTemplate && (
+            <div className="space-y-4 pt-4">
+              {/* Template Info */}
+              <div className="grid grid-cols-3 gap-4 p-4 bg-muted rounded-lg">
+                <div>
+                  <div className="text-sm text-muted-foreground">
+                    Difficulty
+                  </div>
+                  <Badge
+                    className={
+                      difficultyColors[
+                        viewTemplate.difficulty as keyof typeof difficultyColors
+                      ]
+                    }
+                  >
+                    {viewTemplate.difficulty}
+                  </Badge>
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground">Duration</div>
+                  <div className="font-semibold">
+                    {viewTemplate.duration} min
+                  </div>
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground">Exercises</div>
+                  <div className="font-semibold">
+                    {viewTemplate.exercisesWithDetails?.length || 0}
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Exercise List */}
+              <div className="space-y-3">
+                <h3 className="font-semibold">Exercises</h3>
+                {viewTemplate.exercisesWithDetails?.map((item, index) => {
+                  const exercise = item.exerciseDetails;
+                  if (!exercise) return null;
+
+                  return (
+                    <Card key={index}>
+                      <CardContent className="p-4">
+                        <div className="flex items-start gap-4">
+                          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-semibold text-primary">
+                            {index + 1}
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h4 className="font-semibold">{exercise.name}</h4>
+                              <Badge variant="secondary" className="text-xs">
+                                {exercise.difficulty}
+                              </Badge>
+                              <Badge variant="outline" className="text-xs">
+                                {exercise.category}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground mb-2">
+                              {exercise.description}
+                            </p>
+                            <div className="flex gap-4 text-sm">
+                              <div>
+                                <span className="text-muted-foreground">
+                                  Sets:
+                                </span>{" "}
+                                <span className="font-medium">{item.sets}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">
+                                  Reps:
+                                </span>{" "}
+                                <span className="font-medium">{item.reps}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">
+                                  Rest:
+                                </span>{" "}
+                                <span className="font-medium">
+                                  {item.rest}s
+                                </span>
+                              </div>
+                            </div>
+                            {item.notes && (
+                              <div className="mt-2 text-sm italic text-muted-foreground">
+                                Note: {item.notes}
+                              </div>
+                            )}
+                            <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                              <Zap className="h-3 w-3" />
+                              <span>{exercise.equipment}</span>
+                              {exercise.primaryMuscles &&
+                                exercise.primaryMuscles.length > 0 && (
+                                  <>
+                                    <span>•</span>
+                                    <Target className="h-3 w-3" />
+                                    <span>
+                                      {exercise.primaryMuscles.join(", ")}
+                                    </span>
+                                  </>
+                                )}
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsViewDialogOpen(false)}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isAssignDialogOpen} onOpenChange={setIsAssignDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Assign Workout</DialogTitle>
+            <DialogDescription>
+              Assign this workout to a trainee with a schedule
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-4">
+            {/* Select Trainee */}
+            <div className="space-y-2">
+              <Label>Select Trainee</Label>
+              <Select
+                value={assignmentForm.traineeId}
+                onValueChange={(value: Id<"users">) =>
+                  setAssignmentForm({ ...assignmentForm, traineeId: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a trainee" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allTrainees.map((trainee) => (
+                    <SelectItem key={trainee._id} value={trainee._id}>
+                      {trainee.name} ({trainee.email})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {allTrainees.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  No trainees available. Add trainees in the Clients page.
+                </p>
+              )}
+            </div>
+
+            {/* Schedule Days */}
+            <div className="space-y-2">
+              <Label>Schedule (Select Days)</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  "Monday",
+                  "Tuesday",
+                  "Wednesday",
+                  "Thursday",
+                  "Friday",
+                  "Saturday",
+                  "Sunday",
+                ].map((day) => (
+                  <div key={day} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={day}
+                      checked={assignmentForm.scheduledDays.includes(day)}
+                      onCheckedChange={() => toggleScheduledDay(day)}
+                    />
+                    <label
+                      htmlFor={day}
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                    >
+                      {day}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div className="space-y-2">
+              <Label>Notes (optional)</Label>
+              <Textarea
+                placeholder="Any special instructions or modifications..."
+                rows={3}
+                value={assignmentForm.notes}
+                onChange={(e) =>
+                  setAssignmentForm({
+                    ...assignmentForm,
+                    notes: e.target.value,
+                  })
+                }
+              />
+            </div>
+
+            {/* Selected Days Preview */}
+            {assignmentForm.scheduledDays.length > 0 && (
+              <div className="p-3 bg-muted rounded-lg">
+                <div className="text-sm font-medium mb-1">
+                  Schedule Summary:
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {assignmentForm.scheduledDays.join(", ")}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsAssignDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAssignWorkout}
+              disabled={
+                !assignmentForm.traineeId ||
+                assignmentForm.scheduledDays.length === 0
+              }
+            >
+              Assign Workout
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
