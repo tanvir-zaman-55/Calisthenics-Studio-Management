@@ -35,7 +35,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     return stored as Id<"users"> | null;
   });
 
-  // Query current user from Convex (note: api.user not api.users)
+  // Query all users for role switching
+  const allUsers = useQuery(api.user.getAllUsers) ?? [];
+
+  // Query current user from Convex
   const currentUser = useQuery(
     api.user.getUserById,
     currentUserId ? { userId: currentUserId } : "skip"
@@ -43,15 +46,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const simpleLogin = useMutation(api.user.simpleLogin);
 
-  // Initialize with default user if none selected
+  // Initialize with default admin user if no user is selected
   useEffect(() => {
-    if (!currentUserId) {
-      // Default to admin user for development
-      const defaultUserId = "k179fgra9xtxk0mtqz1hxk45497shza4" as Id<"users">;
-      setCurrentUserId(defaultUserId);
-      localStorage.setItem("currentUserId", defaultUserId);
+    if (!currentUserId && allUsers.length > 0) {
+      // Find first admin user
+      const adminUser = allUsers.find((u) => u.role === "admin");
+      if (adminUser) {
+        setCurrentUserId(adminUser._id);
+        localStorage.setItem("currentUserId", adminUser._id);
+      }
     }
-  }, [currentUserId]);
+  }, [currentUserId, allUsers]);
 
   const login = async (email: string) => {
     try {
@@ -69,18 +74,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     localStorage.removeItem("currentUserId");
   };
 
-  // Dev mode: Switch roles using your actual seeded user IDs
+  // Dev mode: Switch roles dynamically by finding users with that role
   const setDevRole = (role: "super_admin" | "admin" | "trainee") => {
-    // IMPORTANT: Replace these with YOUR actual user IDs from the seed result
-    const roleToUserId: Record<string, string> = {
-      super_admin: "k17eq2s2devscvxe2dahpdb4k17shvmw", // Your super admin ID
-      admin: "k179fgra9xtxk0mtqz1hxk45497shza4", // Your admin ID
-      trainee: "k177pvk0gj5qhyqewp13m40x6d7sh1k7", // Your trainee ID
-    };
-
-    const userId = roleToUserId[role] as Id<"users">;
-    setCurrentUserId(userId);
-    localStorage.setItem("currentUserId", userId);
+    const user = allUsers.find((u) => u.role === role);
+    if (user) {
+      setCurrentUserId(user._id);
+      localStorage.setItem("currentUserId", user._id);
+      console.log(`Switched to ${role}:`, user.name);
+    } else {
+      console.error(`No user found with role: ${role}`);
+      console.log(
+        "Available users:",
+        allUsers.map((u) => ({ name: u.name, role: u.role }))
+      );
+    }
   };
 
   const contextValue: AuthContextType = {
