@@ -6,20 +6,25 @@ export default defineSchema({
   users: defineTable({
     name: v.string(),
     email: v.string(),
+    password: v.optional(v.string()), // For new users
+    passwordHash: v.optional(v.string()), // For old production data
     phone: v.optional(v.string()),
     role: v.union(
       v.literal("super_admin"),
       v.literal("admin"),
       v.literal("trainee")
     ),
-    status: v.union(v.literal("active"), v.literal("inactive")),
-    passwordHash: v.string(),
-    joinedAt: v.number(),
     profileImage: v.optional(v.string()),
-    // Trainee-specific
     assignedAdminId: v.optional(v.id("users")),
     weeklyGoal: v.optional(v.number()),
-    // Metadata
+    currentStreak: v.optional(v.number()),
+    longestStreak: v.optional(v.number()),
+    totalWorkouts: v.optional(v.number()),
+    joinDate: v.optional(v.number()),
+    joinedAt: v.optional(v.number()), // ← ADD THIS (old field)
+    status: v.optional(v.string()), // ← ADD THIS (old field)
+    emergencyContact: v.optional(v.string()),
+    medicalNotes: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -92,13 +97,15 @@ export default defineSchema({
     status: v.union(
       v.literal("active"),
       v.literal("completed"),
+      v.literal("paused"),
       v.literal("cancelled")
     ),
     notes: v.optional(v.string()),
   })
     .index("by_trainee", ["traineeId"])
     .index("by_template", ["templateId"])
-    .index("by_trainee_and_status", ["traineeId", "status"]),
+    .index("by_trainee_and_status", ["traineeId", "status"])
+    .index("by_assigned_by", ["assignedBy"]),
 
   // 5. WORKOUT LOGS TABLE - Trainee workout completions
   workoutLogs: defineTable({

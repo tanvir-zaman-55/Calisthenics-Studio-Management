@@ -1,72 +1,12 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-
-// Get all sessions for a date range
-// Get all sessions for a date range (filtered by instructor for admins)
-export const getSessionsByDateRange = query({
-  args: {
-    startDate: v.number(),
-    endDate: v.number(),
-    instructorId: v.optional(v.id("users")),
-    role: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const sessions = await ctx.db
-      .query("classSessions")
-      .withIndex("by_date", (q) =>
-        q.gte("sessionDate", args.startDate).lte("sessionDate", args.endDate)
-      )
-      .collect();
-
-    // Get class and instructor details
-    const sessionsWithDetails = await Promise.all(
-      sessions.map(async (session) => {
-        const classItem = await ctx.db.get(session.classId);
-        const instructor = classItem
-          ? await ctx.db.get(classItem.instructorId)
-          : null;
-
-        return {
-          ...session,
-          class: classItem,
-          instructorName: instructor?.name,
-          instructorId: classItem?.instructorId,
-        };
-      })
-    );
-
-    // Filter by instructor for regular admins
-    if (args.role === "admin" && args.instructorId) {
-      return sessionsWithDetails.filter(
-        (s) => s.instructorId === args.instructorId
-      );
-    }
-
-    return sessionsWithDetails;
-  },
-});
-
-// Get sessions for a specific class
-export const getSessionsByClass = query({
-  args: { classId: v.id("classes") },
-  handler: async (ctx, args) => {
-    const sessions = await ctx.db
-      .query("classSessions")
-      .withIndex("by_class", (q) => q.eq("classId", args.classId))
-      .order("desc")
-      .collect();
-
-    return sessions;
-  },
-});
-
-// Create a single session
+// Create a new class session
 export const createSession = mutation({
   args: {
     classId: v.id("classes"),
+    startTime: v.string(),
+    endTime: v.string(),
     sessionDate: v.number(),
-    startTime: v.string(), // "09:00"
-    endTime: v.string(), // "10:30"
     location: v.optional(v.string()),
     maxCapacity: v.optional(v.number()),
     notes: v.optional(v.string()),
@@ -74,177 +14,195 @@ export const createSession = mutation({
   handler: async (ctx, args) => {
     const sessionId = await ctx.db.insert("classSessions", {
       classId: args.classId,
-      sessionDate: args.sessionDate,
       startTime: args.startTime,
       endTime: args.endTime,
-      location: args.location,
-      maxCapacity: args.maxCapacity,
+      sessionDate: args.sessionDate,
       status: "scheduled",
-      notes: args.notes,
+      ...(args.location && { location: args.location }),
+      ...(args.maxCapacity && { maxCapacity: args.maxCapacity }),
+      ...(args.notes && { notes: args.notes }),
     });
 
     return sessionId;
   },
 });
 
-// Create recurring sessions (e.g., every Monday for 8 weeks)
-export const createRecurringSessions = mutation({
+// Get sessions for a specific week with filtering
+export const getSessionsForWeek = query({
   args: {
-    classId: v.id("classes"),
-    startDate: v.number(),
-    weeksCount: v.number(),
-    daysOfWeek: v.array(v.number()), // [1, 3, 5] for Mon, Wed, Fri
-    startTime: v.string(),
-    endTime: v.string(),
-    location: v.optional(v.string()),
-    maxCapacity: v.optional(v.number()),
+    startDate: v.string(), // ISO format date string
+    endDate: v.string(), // ISO format date string
+    instructorId: v.optional(v.id("users")),
+    traineeId: v.optional(v.id("users")),
+    role: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const sessionIds = [];
+    // Get all sessions in the date range
+    let allSessions = await ctx.db
+      .query("classSessions")
+      .filter((q) =>
+        q.and(
+          q.gte(q.field("startTime"), args.startDate),
+          q.lte(q.field("startTime"), args.endDate)
+        )
+      )
+      .collect();
 
-    for (let week = 0; week < args.weeksCount; week++) {
-      for (const dayOfWeek of args.daysOfWeek) {
-        const date = new Date(args.startDate);
-        date.setDate(date.getDate() + week * 7 + dayOfWeek);
+    // For trainees: Get their enrolled classes
+    let enrolledClassIds: Set<string> | null = null;
+    if (args.role === "trainee" && args.traineeId) {
+      // ✅ Already checking args.traineeId exists
+      const enrollments = await ctx.db
+        .query("classEnrollments")
+        .withIndex("by_trainee_and_status", (q) =>
+          q
+            .eq("traineeId", args.traineeId!) // ← ADD ! to assert it's not undefined
+            .eq("status", "active")
+        )
+        .collect();
 
-        const sessionId = await ctx.db.insert("classSessions", {
-          classId: args.classId,
-          sessionDate: date.getTime(),
-          startTime: args.startTime,
-          endTime: args.endTime,
-          location: args.location,
-          maxCapacity: args.maxCapacity,
-          status: "scheduled",
-        });
-
-        sessionIds.push(sessionId);
-      }
+      enrolledClassIds = new Set(enrollments.map((e) => e.classId));
     }
 
-    return sessionIds;
+    // Get class and instructor details, filter based on role
+    const sessionsWithDetails = [];
+
+    for (const session of allSessions) {
+      const classItem = await ctx.db.get(session.classId);
+
+      // Skip if class doesn't exist
+      if (!classItem) continue;
+
+      // For trainees: only show sessions for enrolled classes
+      if (enrolledClassIds && !enrolledClassIds.has(session.classId)) {
+        continue;
+      }
+
+      const instructor = await ctx.db.get(classItem.instructorId);
+
+      // Skip if instructor doesn't exist or isn't valid
+      if (
+        !instructor ||
+        (instructor.role !== "admin" && instructor.role !== "super_admin")
+      ) {
+        continue;
+      }
+
+      // Filter by instructor for regular admins
+      if (
+        args.role === "admin" &&
+        args.instructorId &&
+        classItem.instructorId !== args.instructorId
+      ) {
+        continue;
+      }
+
+      sessionsWithDetails.push({
+        ...session,
+        className: classItem.name,
+        classType: classItem.type,
+        instructorName: instructor.name,
+        location: session.location || classItem.location,
+      });
+    }
+
+    return sessionsWithDetails;
   },
 });
 
-// Cancel a session
-export const cancelSession = mutation({
-  args: {
-    sessionId: v.id("classSessions"),
-    reason: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    await ctx.db.patch(args.sessionId, {
-      status: "cancelled",
-      notes: args.reason,
-    });
-
-    return { success: true };
-  },
-});
-
-// Get trainee's upcoming sessions (based on enrollments)
-export const getTraineeUpcomingSessions = query({
-  args: { traineeId: v.id("users") },
-  handler: async (ctx, args) => {
-    // Get trainee's active enrollments
-    const enrollments = await ctx.db
-      .query("classEnrollments")
-      .withIndex("by_trainee_and_status", (q) =>
-        q.eq("traineeId", args.traineeId).eq("status", "active")
-      )
-      .collect();
-
-    const classIds = enrollments.map((e) => e.classId);
-
-    // Get all upcoming sessions for enrolled classes
-    const now = Date.now();
-    const twoWeeksFromNow = now + 14 * 24 * 60 * 60 * 1000;
-
-    const allSessions = await ctx.db
-      .query("classSessions")
-      .withIndex("by_date", (q) =>
-        q.gte("sessionDate", now).lte("sessionDate", twoWeeksFromNow)
-      )
-      .filter((q) => q.eq(q.field("status"), "scheduled"))
-      .collect();
-
-    // Filter to only sessions for enrolled classes
-    const enrolledSessions = allSessions.filter((session) =>
-      classIds.includes(session.classId)
-    );
-
-    // Get class details
-    const sessionsWithDetails = await Promise.all(
-      enrolledSessions.map(async (session) => {
-        const classItem = await ctx.db.get(session.classId);
-        return {
-          ...session,
-          className: classItem?.name,
-          classType: classItem?.type,
-        };
-      })
-    );
-
-    return sessionsWithDetails.sort((a, b) => a.sessionDate - b.sessionDate);
-  },
-});
 // Get session stats
-// Get session stats (filtered by instructor)
 export const getSessionStats = query({
   args: {
     instructorId: v.optional(v.id("users")),
     role: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const now = Date.now();
-    const weekStart = now - (now % (7 * 24 * 60 * 60 * 1000));
-    const weekEnd = weekStart + 7 * 24 * 60 * 60 * 1000;
+    const now = new Date();
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - now.getDay());
+    weekStart.setHours(0, 0, 0, 0);
 
-    let thisWeekSessions = await ctx.db
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 7);
+
+    let sessions = await ctx.db
       .query("classSessions")
-      .withIndex("by_date", (q) =>
-        q.gte("sessionDate", weekStart).lte("sessionDate", weekEnd)
+      .filter((q) =>
+        q.and(
+          q.gte(q.field("startTime"), weekStart.toISOString()),
+          q.lt(q.field("startTime"), weekEnd.toISOString())
+        )
       )
-      .filter((q) => q.eq(q.field("status"), "scheduled"))
       .collect();
 
-    // Filter for regular admins
+    // Filter by instructor for regular admins
     if (args.role === "admin" && args.instructorId) {
-      const sessionsWithClasses = await Promise.all(
-        thisWeekSessions.map(async (session) => {
-          const classItem = await ctx.db.get(session.classId);
-          return { ...session, instructorId: classItem?.instructorId };
-        })
-      );
-      thisWeekSessions = sessionsWithClasses.filter(
-        (s) => s.instructorId === args.instructorId
-      );
+      const filteredSessions = [];
+      for (const session of sessions) {
+        const classItem = await ctx.db.get(session.classId);
+        if (classItem?.instructorId === args.instructorId) {
+          filteredSessions.push(session);
+        }
+      }
+      sessions = filteredSessions;
     }
 
     return {
-      thisWeekSessions: thisWeekSessions.length,
+      thisWeekSessions: sessions.length,
+      totalSessions: sessions.length,
     };
   },
 });
 
-// Get overall attendance stats
-export const getOverallAttendanceStats = query({
+// Delete a session
+export const deleteSession = mutation({
+  args: {
+    sessionId: v.id("classSessions"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.sessionId);
+    return { success: true };
+  },
+});
+
+// Delete all sessions (for cleanup)
+export const deleteAllSessions = mutation({
   handler: async (ctx) => {
-    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const allSessions = await ctx.db.query("classSessions").collect();
 
-    const recentAttendance = await ctx.db
-      .query("attendance")
-      .filter((q) => q.gte(q.field("scheduleDate"), thirtyDaysAgo))
-      .collect();
+    for (const session of allSessions) {
+      await ctx.db.delete(session._id);
+    }
 
-    const total = recentAttendance.length;
-    const present = recentAttendance.filter(
-      (a) => a.status === "present"
-    ).length;
+    return { deletedCount: allSessions.length };
+  },
+});
 
-    return {
-      total,
-      present,
-      attendanceRate: total > 0 ? Math.round((present / total) * 100) : 0,
-    };
+// Cleanup orphaned sessions
+export const cleanupOrphanedSessions = mutation({
+  handler: async (ctx) => {
+    const allSessions = await ctx.db.query("classSessions").collect();
+
+    let deletedCount = 0;
+    for (const session of allSessions) {
+      const classItem = await ctx.db.get(session.classId);
+
+      if (!classItem) {
+        await ctx.db.delete(session._id);
+        deletedCount++;
+        continue;
+      }
+
+      const instructor = await ctx.db.get(classItem.instructorId);
+      if (
+        !instructor ||
+        (instructor.role !== "admin" && instructor.role !== "super_admin")
+      ) {
+        await ctx.db.delete(session._id);
+        deletedCount++;
+      }
+    }
+
+    return { deletedCount };
   },
 });

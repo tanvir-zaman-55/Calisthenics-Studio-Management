@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Card,
@@ -23,6 +23,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Select,
   SelectContent,
@@ -34,13 +35,15 @@ import { useAuth } from "@/context/AuthContext";
 import {
   Plus,
   Search,
-  UserPlus,
   Users,
   TrendingUp,
   Calendar,
   Dumbbell,
   Mail,
   Phone,
+  UserPlus,
+  AlertCircle,
+  CheckCircle,
 } from "lucide-react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -51,6 +54,9 @@ const Clients = () => {
   const { isSuperAdmin, currentUser } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [emailToCheck, setEmailToCheck] = useState("");
+  const [existingUser, setExistingUser] = useState<any>(null);
+  const [checkingEmail, setCheckingEmail] = useState(false);
 
   // Load trainees with stats
   const trainees =
@@ -63,10 +69,17 @@ const Clients = () => {
           }
         : "skip"
     ) ?? [];
+
   // Load admins for assignment
   const admins = useQuery(api.user.getUsersByRole, { role: "admin" }) ?? [];
 
   const createUser = useMutation(api.user.createUser);
+  const register = useMutation(api.auth.register);
+  const checkUserByEmail = useQuery(
+    api.user.checkUserByEmail,
+    emailToCheck ? { email: emailToCheck } : "skip"
+  );
+  const assignExistingTrainee = useMutation(api.user.assignExistingTrainee);
 
   // Form state
   const [newTrainee, setNewTrainee] = useState({
@@ -76,29 +89,90 @@ const Clients = () => {
     assignedAdminId: "" as Id<"users"> | "",
   });
 
-  const handleCreateTrainee = async () => {
+  // Check email when it changes
+  useEffect(() => {
+    if (checkUserByEmail !== undefined) {
+      setExistingUser(checkUserByEmail);
+      setCheckingEmail(false);
+    }
+  }, [checkUserByEmail]);
+
+  const handleEmailBlur = () => {
+    if (newTrainee.email && newTrainee.email.includes("@")) {
+      setCheckingEmail(true);
+      setEmailToCheck(newTrainee.email);
+    }
+  };
+
+  const handleCreateOrAssignTrainee = async () => {
     if (!currentUser) return;
 
     try {
-      await createUser({
-        name: newTrainee.name,
-        email: newTrainee.email,
-        phone: newTrainee.phone,
-        role: "trainee",
-        assignedAdminId: newTrainee.assignedAdminId || currentUser._id,
-      });
+      if (existingUser) {
+        // User exists - assign them
+        if (existingUser.role !== "trainee") {
+          alert(`This email belongs to a ${existingUser.role}, not a trainee.`);
+          return;
+        }
 
+        if (existingUser.assignedAdminId) {
+          alert(
+            `${existingUser.name} is already assigned to another coach.\n\nPlease contact a Super Admin to reassign them.`
+          );
+          return;
+        }
+
+        await assignExistingTrainee({
+          traineeId: existingUser._id,
+          adminId: currentUser._id,
+          phone: newTrainee.phone || undefined,
+        });
+
+        alert(`${existingUser.name} has been added to your client list!`);
+      } else {
+        // User doesn't exist - create new account with temp password
+        const tempPassword = `Trainee${Math.random().toString(36).slice(-8)}!`;
+
+        await register({
+          name: newTrainee.name,
+          email: newTrainee.email,
+          password: tempPassword,
+          phone: newTrainee.phone,
+          role: "trainee",
+        });
+
+        // Assign to admin
+        const user = await checkUserByEmail;
+        if (user) {
+          await assignExistingTrainee({
+            traineeId: user._id,
+            adminId: newTrainee.assignedAdminId || currentUser._id,
+            phone: newTrainee.phone,
+          });
+        }
+
+        alert(
+          `Trainee added successfully!\n\nTemporary Password: ${tempPassword}\n\nPlease share this with ${newTrainee.name}.`
+        );
+      }
+
+      // Reset form
       setNewTrainee({
         name: "",
         email: "",
         phone: "",
         assignedAdminId: "",
       });
+      setEmailToCheck("");
+      setExistingUser(null);
       setIsDialogOpen(false);
-      alert("Trainee added successfully!");
     } catch (error) {
-      console.error("Error creating trainee:", error);
-      alert("Failed to add trainee");
+      console.error("Error adding trainee:", error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Failed to add trainee. Please try again."
+      );
     }
   };
 
@@ -126,7 +200,23 @@ const Clients = () => {
             Manage your trainees and track their progress
           </p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <Dialog
+          open={isDialogOpen}
+          onOpenChange={(open) => {
+            setIsDialogOpen(open);
+            if (!open) {
+              // Reset on close
+              setNewTrainee({
+                name: "",
+                email: "",
+                phone: "",
+                assignedAdminId: "",
+              });
+              setEmailToCheck("");
+              setExistingUser(null);
+            }
+          }}
+        >
           <DialogTrigger asChild>
             <Button>
               <UserPlus className="h-4 w-4 mr-2" />
@@ -135,37 +225,87 @@ const Clients = () => {
           </DialogTrigger>
           <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
-              <DialogTitle>Add New Trainee</DialogTitle>
+              <DialogTitle>Add Trainee</DialogTitle>
               <DialogDescription>
-                Add a new trainee to your roster
+                Enter trainee's email. If they're registered, we'll add them to
+                your clients. If not, we'll create their account.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 pt-4">
+              {/* Email Field */}
               <div className="space-y-2">
-                <Label htmlFor="name">Full Name</Label>
-                <Input
-                  id="name"
-                  placeholder="John Doe"
-                  value={newTrainee.name}
-                  onChange={(e) =>
-                    setNewTrainee({ ...newTrainee, name: e.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">Email *</Label>
                 <Input
                   id="email"
                   type="email"
-                  placeholder="john@example.com"
+                  placeholder="trainee@example.com"
                   value={newTrainee.email}
-                  onChange={(e) =>
-                    setNewTrainee({ ...newTrainee, email: e.target.value })
-                  }
+                  onChange={(e) => {
+                    setNewTrainee({ ...newTrainee, email: e.target.value });
+                    setExistingUser(null);
+                    setEmailToCheck("");
+                  }}
+                  onBlur={handleEmailBlur}
                 />
+                {checkingEmail && (
+                  <p className="text-xs text-muted-foreground">
+                    Checking email...
+                  </p>
+                )}
               </div>
+
+              {/* Show if user exists */}
+              {existingUser && (
+                <Alert className="border-green-200 bg-green-50 dark:bg-green-950">
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <AlertDescription>
+                    <div className="font-medium text-green-900 dark:text-green-100">
+                      User Found: {existingUser.name}
+                    </div>
+                    <div className="text-xs text-green-700 dark:text-green-300 mt-1">
+                      {existingUser.assignedAdminId
+                        ? "⚠️ Already assigned to another coach"
+                        : "✓ Available to add to your clients"}
+                    </div>
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {/* Show if user doesn't exist */}
+              {emailToCheck &&
+                !checkingEmail &&
+                existingUser === null &&
+                newTrainee.email.includes("@") && (
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      No account found. We'll create a new account with a
+                      temporary password.
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+              {/* Name field - only for new users */}
+              {(!existingUser || existingUser === null) && (
+                <div className="space-y-2">
+                  <Label htmlFor="name">Full Name *</Label>
+                  <Input
+                    id="name"
+                    placeholder="John Doe"
+                    value={existingUser ? existingUser.name : newTrainee.name}
+                    onChange={(e) =>
+                      setNewTrainee({ ...newTrainee, name: e.target.value })
+                    }
+                    disabled={!!existingUser}
+                  />
+                </div>
+              )}
+
+              {/* Phone field */}
               <div className="space-y-2">
-                <Label htmlFor="phone">Phone</Label>
+                <Label htmlFor="phone">
+                  Phone {existingUser ? "(optional - update)" : ""}
+                </Label>
                 <Input
                   id="phone"
                   placeholder="+1 (555) 000-0000"
@@ -174,10 +314,17 @@ const Clients = () => {
                     setNewTrainee({ ...newTrainee, phone: e.target.value })
                   }
                 />
+                {existingUser?.phone && (
+                  <p className="text-xs text-muted-foreground">
+                    Current: {existingUser.phone}
+                  </p>
+                )}
               </div>
-              {isSuperAdmin && admins.length > 0 && (
+
+              {/* Admin assignment - only for super admin creating new users */}
+              {isSuperAdmin && !existingUser && admins.length > 0 && (
                 <div className="space-y-2">
-                  <Label htmlFor="admin">Assign to Admin</Label>
+                  <Label htmlFor="admin">Assign to Coach</Label>
                   <Select
                     value={newTrainee.assignedAdminId || ""}
                     onValueChange={(value) =>
@@ -188,14 +335,19 @@ const Clients = () => {
                     }
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select an admin" />
+                      <SelectValue placeholder="Select a coach" />
                     </SelectTrigger>
                     <SelectContent>
-                      {admins.map((admin) => (
-                        <SelectItem key={admin._id} value={admin._id}>
-                          {admin.name}
-                        </SelectItem>
-                      ))}
+                      <SelectItem value={currentUser?._id || ""}>
+                        Myself
+                      </SelectItem>
+                      {admins
+                        .filter((admin) => admin._id !== currentUser?._id)
+                        .map((admin) => (
+                          <SelectItem key={admin._id} value={admin._id}>
+                            {admin.name}
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -206,10 +358,14 @@ const Clients = () => {
                 Cancel
               </Button>
               <Button
-                onClick={handleCreateTrainee}
-                disabled={!newTrainee.name || !newTrainee.email}
+                onClick={handleCreateOrAssignTrainee}
+                disabled={
+                  !newTrainee.email ||
+                  (!existingUser && !newTrainee.name) ||
+                  (existingUser && existingUser.assignedAdminId)
+                }
               >
-                Add Trainee
+                {existingUser ? "Add to My Clients" : "Create & Add"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -370,7 +526,7 @@ const Clients = () => {
                   {trainee.assignedAdminName && (
                     <div className="mt-4 pt-4 border-t">
                       <div className="text-xs text-muted-foreground">
-                        Assigned to: {trainee.assignedAdminName}
+                        Coach: {trainee.assignedAdminName}
                       </div>
                     </div>
                   )}

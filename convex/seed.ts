@@ -14,11 +14,9 @@ export const seedDatabase = internalMutation({
     const superAdminId = await ctx.db.insert("users", {
       name: "Super Admin",
       email: "superadmin@calisthenics.com",
+      password: "admin123", // Default password
       phone: "+880 1234 567890",
       role: "super_admin",
-      status: "active",
-      passwordHash: "temp_hash_123", // Will be replaced with real auth
-      joinedAt: now,
       createdAt: now,
       updatedAt: now,
     });
@@ -27,11 +25,9 @@ export const seedDatabase = internalMutation({
     const adminId = await ctx.db.insert("users", {
       name: "Admin User",
       email: "admin@calisthenics.com",
+      password: "admin123",
       phone: "+880 1234 567891",
       role: "admin",
-      status: "active",
-      passwordHash: "temp_hash_123",
-      joinedAt: now,
       createdAt: now,
       updatedAt: now,
     });
@@ -40,11 +36,9 @@ export const seedDatabase = internalMutation({
     const traineeId = await ctx.db.insert("users", {
       name: "Ahmed Hassan",
       email: "ahmed@calisthenics.com",
+      password: "trainee123",
       phone: "+880 1234 567892",
       role: "trainee",
-      status: "active",
-      passwordHash: "temp_hash_123",
-      joinedAt: now,
       assignedAdminId: adminId,
       weeklyGoal: 5,
       createdAt: now,

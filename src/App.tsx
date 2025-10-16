@@ -5,36 +5,32 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ConvexProvider, ConvexReactClient } from "convex/react";
 import Layout from "./components/layout/Layout";
-import Index from "./pages/Index";
-import NotFound from "./pages/NotFound";
+import ProtectedRoute from "./components/ProtectedRoute";
+import { AuthProvider, useAuth } from "./context/AuthContext";
+
+// Auth Pages (no layout)
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+
+// Protected Pages (with layout)
 import Dashboard from "./pages/Dashboard";
 import Clients from "./pages/Clients";
 import ClientDetail from "./pages/ClientDetail";
-import Classes from "./pages/Classes";
-import Schedule from "./pages/Schedule";
-import Admins from "./pages/Admins";
 import Workouts from "./pages/Workouts";
 import TraineeWorkouts from "./pages/TraineeWorkouts";
-import Settings from "./pages/Settings";
+import Classes from "./pages/Classes";
+import Schedule from "./pages/Schedule";
 import Attendance from "./pages/Attendance";
-import { AuthProvider, useAuth } from "./context/AuthContext";
+import Admins from "./pages/Admins";
+import Settings from "./pages/Settings";
 
 const queryClient = new QueryClient();
-
-// Initialize Convex client
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL);
 
-// Wrapper component to handle role-based routing for workouts
+// Wrapper for Workouts based on role
 const WorkoutsRoute = () => {
   const { isTrainee } = useAuth();
   return isTrainee ? <TraineeWorkouts /> : <Workouts />;
-};
-
-// Wrapper component for attendance route
-const AttendanceRoute = () => {
-  const { currentUser } = useAuth();
-  if (!currentUser) return <Navigate to="/" replace />;
-  return <Attendance />;
 };
 
 const App = () => (
@@ -50,21 +46,35 @@ const App = () => (
           }}
         >
           <AuthProvider>
-            <Layout>
-              <Routes>
-                <Route path="/" element={<Index />} />
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/clients" element={<Clients />} />
-                <Route path="/clients/:id" element={<ClientDetail />} />
-                <Route path="/workouts" element={<WorkoutsRoute />} />
-                <Route path="/classes" element={<Classes />} />
-                <Route path="/schedule" element={<Schedule />} />
-                <Route path="/admins" element={<Admins />} />
-                <Route path="/attendance" element={<AttendanceRoute />} />
-                <Route path="/settings" element={<Settings />} />
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </Layout>
+            <Routes>
+              {/* Public Routes - No Layout */}
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+
+              {/* Protected Routes - With Layout */}
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <Layout />
+                  </ProtectedRoute>
+                }
+              >
+                <Route index element={<Navigate to="/dashboard" replace />} />
+                <Route path="dashboard" element={<Dashboard />} />
+                <Route path="clients" element={<Clients />} />
+                <Route path="clients/:id" element={<ClientDetail />} />
+                <Route path="workouts" element={<WorkoutsRoute />} />
+                <Route path="classes" element={<Classes />} />
+                <Route path="schedule" element={<Schedule />} />
+                <Route path="attendance" element={<Attendance />} />
+                <Route path="admins" element={<Admins />} />
+                <Route path="settings" element={<Settings />} />
+              </Route>
+
+              {/* Catch all - redirect to login */}
+              <Route path="*" element={<Navigate to="/login" replace />} />
+            </Routes>
           </AuthProvider>
         </BrowserRouter>
       </TooltipProvider>

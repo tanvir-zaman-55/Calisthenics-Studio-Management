@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import { MadeWithDyad } from "@/components/made-with-dyad";
 
@@ -10,14 +11,13 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex h-screen bg-background">
       <Sidebar />
-      <div className="flex flex-col flex-1">
-        <main className="flex-1 p-4 md:p-6 lg:p-8">
-          {children}
-        </main>
-        <MadeWithDyad />
-      </div>
+      <main className="flex-1 overflow-auto">
+        <div className="container mx-auto p-6">
+          <Outlet /> {/* ← THIS IS CRITICAL */}
+        </div>
+      </main>
     </div>
   );
 };

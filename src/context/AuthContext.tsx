@@ -31,8 +31,10 @@ interface AuthContextType {
   isSuperAdmin: boolean;
   isAdmin: boolean;
   isTrainee: boolean;
-  setDevRole: (role: Role) => void;
+  isAuthenticated: boolean;
+  logout: () => void;
   setCurrentUserById: (userId: Id<"users">) => void;
+  setDevRole: (role: Role) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -40,28 +42,22 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  // Load all users from Convex
-  const allUsers = useQuery(api.user.getAllUsers) ?? [];
+  // Check if authenticated
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return localStorage.getItem("isAuthenticated") === "true";
+  });
 
-  // Get current user ID from localStorage (for dev mode)
+  // Get current user ID from localStorage
   const [currentUserId, setCurrentUserId] = useState<Id<"users"> | null>(() => {
     const stored = localStorage.getItem("currentUserId");
     return stored as Id<"users"> | null;
   });
 
+  // Load all users from Convex
+  const allUsers = useQuery(api.user.getAllUsers) ?? [];
+
   // Find current user
   const currentUser = allUsers.find((u) => u._id === currentUserId) || null;
-
-  // If no user selected or user doesn't exist, default to first super admin
-  useEffect(() => {
-    if (!currentUser && allUsers.length > 0) {
-      const superAdmin = allUsers.find((u) => u.role === "super_admin");
-      if (superAdmin) {
-        setCurrentUserId(superAdmin._id);
-        localStorage.setItem("currentUserId", superAdmin._id);
-      }
-    }
-  }, [allUsers, currentUser]);
 
   const currentUserRole: Role = currentUser?.role || "trainee";
 
@@ -69,26 +65,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const isAdmin = currentUserRole === "admin" || isSuperAdmin;
   const isTrainee = currentUserRole === "trainee";
 
-  const setDevRole = (role: Role) => {
-    // Find a user with this role
-    const user = allUsers.find((u) => u.role === role);
-    if (user) {
-      localStorage.setItem("currentUserId", user._id);
-      console.log(`Switching to ${role}:`, user.name);
-      // Force complete page reload
-      window.location.href = window.location.pathname;
-    } else {
-      console.error(`No user found with role: ${role}`);
-    }
+  // Logout function
+  const logout = () => {
+    localStorage.removeItem("currentUserId");
+    localStorage.removeItem("isAuthenticated");
+    setIsAuthenticated(false);
+    setCurrentUserId(null);
+    window.location.href = "/login";
   };
 
+  // Dev mode: Switch users
   const setCurrentUserById = (userId: Id<"users">) => {
     const user = allUsers.find((u) => u._id === userId);
     if (user) {
       localStorage.setItem("currentUserId", userId);
       console.log(`Switching to user:`, user.name);
-      // Force complete page reload to clear ALL cached data
       window.location.href = window.location.pathname;
+    }
+  };
+
+  const setDevRole = (role: Role) => {
+    const user = allUsers.find((u) => u.role === role);
+    if (user) {
+      localStorage.setItem("currentUserId", user._id);
+      console.log(`Switched to ${role}:`, user.name);
+      window.location.href = window.location.pathname;
+    } else {
+      console.error(`No user found with role: ${role}`);
     }
   };
 
@@ -100,8 +103,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         isSuperAdmin,
         isAdmin,
         isTrainee,
-        setDevRole,
+        isAuthenticated,
+        logout,
         setCurrentUserById,
+        setDevRole,
       }}
     >
       {children}

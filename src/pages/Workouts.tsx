@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Card,
   CardContent,
@@ -50,51 +50,21 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 
-interface Exercise {
-  _id: Id<"exercises">;
-  name: string;
-  category: string;
-  difficulty: string;
-  primaryMuscles: string[];
-  equipment: string;
-  description: string;
-  videoUrl?: string;
-}
-
-interface WorkoutExercise {
-  exerciseId: Id<"exercises">;
-  sets: number;
-  reps: string;
-  rest: number;
-  notes?: string;
-}
-
-interface WorkoutTemplate {
-  _id: Id<"workoutTemplates">;
-  name: string;
-  description: string;
-  difficulty: string;
-  duration: number;
-  exercises: WorkoutExercise[];
-  createdAt: number;
-}
-
 const Workouts = () => {
-  const { isAdmin, isSuperAdmin, currentUser } = useAuth();
+  const { isAdmin, currentUser } = useAuth();
   const [selectedTab, setSelectedTab] = useState("exercises");
   const [exerciseTab, setExerciseTab] = useState("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [viewTemplateId, setViewTemplateId] =
-    useState<Id<"workoutTemplates"> | null>(null); // ← ADD
-  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false); // ← ADD
+    useState<Id<"workoutTemplates"> | null>(null);
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [assignTemplateId, setAssignTemplateId] =
-    useState<Id<"workoutTemplates"> | null>(null); // ← ADD
-  const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false); // ← ADD
+    useState<Id<"workoutTemplates"> | null>(null);
+  const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
 
-  // Load data from Convex (replaces localStorage)
-  // Load data from Convex (replaces localStorage)
+  // Load data from Convex
   const exercises =
     useQuery(
       api.exercises.getAllExercises,
@@ -105,9 +75,17 @@ const Workouts = () => {
           }
         : "skip"
     ) ?? [];
-  const workoutTemplates = useQuery(api.workoutTemplates.getAllTemplates) ?? [];
-  const createTemplate = useMutation(api.workoutTemplates.createTemplate);
-  const deleteTemplate = useMutation(api.workoutTemplates.deleteTemplate);
+
+  const workoutTemplates =
+    useQuery(
+      api.workoutTemplates.getAllTemplates,
+      currentUser
+        ? {
+            creatorId: currentUser._id,
+            role: currentUser.role,
+          }
+        : "skip"
+    ) ?? [];
   const assignmentStats = useQuery(
     api.workoutAssignments.getAssignmentStats,
     currentUser
@@ -118,18 +96,36 @@ const Workouts = () => {
       : "skip"
   );
 
-  // Query for viewing template details // ← ADD
+  // Get my assignments
+  const myAssignments =
+    useQuery(
+      api.workoutAssignments.getAssignmentsByAdmin,
+      currentUser ? { adminId: currentUser._id } : "skip"
+    ) ?? [];
+
+  // Query for viewing template details
   const viewTemplate = useQuery(
     api.workoutTemplates.getTemplateWithExercises,
     viewTemplateId ? { templateId: viewTemplateId } : "skip"
   );
 
-  const allTrainees =
-    useQuery(api.user.getUsersByRole, { role: "trainee" }) ?? [];
+  // Load only MY trainees (filtered by admin)
+  const trainees =
+    useQuery(
+      api.trainees.getAllTraineesWithStats,
+      currentUser
+        ? {
+            adminId: currentUser._id,
+            role: currentUser.role,
+          }
+        : "skip"
+    ) ?? [];
 
   // Mutations
   const createExercise = useMutation(api.exercises.createExercise);
   const deleteExercise = useMutation(api.exercises.deleteExercise);
+  const createTemplate = useMutation(api.workoutTemplates.createTemplate);
+  const deleteTemplate = useMutation(api.workoutTemplates.deleteTemplate);
   const assignWorkout = useMutation(api.workoutAssignments.assignWorkout);
 
   // Form state for new exercise
@@ -143,7 +139,7 @@ const Workouts = () => {
     videoUrl: "",
   });
 
-  // NEW: Form state for new template
+  // Form state for new template
   const [newTemplate, setNewTemplate] = useState({
     name: "",
     description: "",
@@ -158,17 +154,17 @@ const Workouts = () => {
     }>,
   });
 
-  // NEW: Form state for workout assignment
+  // Form state for workout assignment
   const [assignmentForm, setAssignmentForm] = useState({
-    traineeId: "" as Id<"users">,
+    traineeId: "" as Id<"users"> | "",
     scheduledDays: [] as string[],
     startDate: Date.now(),
     notes: "",
   });
 
-  // NEW: Temporary exercise being added to template
+  // Temporary exercise being added to template
   const [tempExercise, setTempExercise] = useState({
-    exerciseId: "" as Id<"exercises">,
+    exerciseId: "" as Id<"exercises"> | "",
     sets: 3,
     reps: "10-12",
     rest: 60,
@@ -190,7 +186,6 @@ const Workouts = () => {
         createdBy: currentUser._id,
       });
 
-      // Reset form and close dialog
       setNewExercise({
         name: "",
         category: "",
@@ -201,16 +196,13 @@ const Workouts = () => {
         videoUrl: "",
       });
       setIsDialogOpen(false);
-
-      // Show success message (you can use toast here)
-      console.log("Exercise created successfully!");
+      alert("Exercise created successfully!");
     } catch (error) {
       console.error("Error creating exercise:", error);
-      alert("Failed to create exercise. Please try again.");
+      alert("Failed to create exercise");
     }
   };
 
-  // NEW: Handle create template
   const handleCreateTemplate = async () => {
     if (!currentUser) return;
 
@@ -229,7 +221,6 @@ const Workouts = () => {
         createdBy: currentUser._id,
       });
 
-      // Reset form and close dialog
       setNewTemplate({
         name: "",
         description: "",
@@ -238,29 +229,35 @@ const Workouts = () => {
         exercises: [],
       });
       setIsTemplateDialogOpen(false);
-
-      console.log("Template created successfully!");
+      alert("Template created successfully!");
     } catch (error) {
       console.error("Error creating template:", error);
-      alert("Failed to create template. Please try again.");
+      alert("Failed to create template");
     }
   };
 
-  // NEW: Add exercise to template
   const handleAddExerciseToTemplate = () => {
     if (!tempExercise.exerciseId) {
       alert("Please select an exercise");
       return;
     }
 
+    // Create a proper exercise object with the correct type
+    const exerciseToAdd = {
+      exerciseId: tempExercise.exerciseId as Id<"exercises">,
+      sets: tempExercise.sets,
+      reps: tempExercise.reps,
+      rest: tempExercise.rest,
+      ...(tempExercise.notes && { notes: tempExercise.notes }),
+    };
+
     setNewTemplate({
       ...newTemplate,
-      exercises: [...newTemplate.exercises, { ...tempExercise }],
+      exercises: [...newTemplate.exercises, exerciseToAdd],
     });
 
-    // Reset temp exercise
     setTempExercise({
-      exerciseId: "" as Id<"exercises">,
+      exerciseId: "" as Id<"exercises"> | "",
       sets: 3,
       reps: "10-12",
       rest: 60,
@@ -268,7 +265,6 @@ const Workouts = () => {
     });
   };
 
-  // NEW: Remove exercise from template
   const handleRemoveExerciseFromTemplate = (index: number) => {
     setNewTemplate({
       ...newTemplate,
@@ -301,7 +297,7 @@ const Workouts = () => {
 
     try {
       await assignWorkout({
-        traineeId: assignmentForm.traineeId,
+        traineeId: assignmentForm.traineeId as Id<"users">,
         templateId: assignTemplateId,
         assignedBy: currentUser._id,
         scheduledDays: assignmentForm.scheduledDays,
@@ -309,15 +305,13 @@ const Workouts = () => {
         notes: assignmentForm.notes,
       });
 
-      // Reset form and close dialog
       setAssignmentForm({
-        traineeId: "" as Id<"users">,
+        traineeId: "" as Id<"users"> | "",
         scheduledDays: [],
         startDate: Date.now(),
         notes: "",
       });
       setIsAssignDialogOpen(false);
-
       alert("Workout assigned successfully!");
     } catch (error) {
       console.error("Error assigning workout:", error);
@@ -341,7 +335,6 @@ const Workouts = () => {
       });
     }
   };
-  // Remove the old useEffect and loadData function
 
   const difficultyColors = {
     Beginner: "bg-green-500/10 text-green-500",
@@ -354,7 +347,6 @@ const Workouts = () => {
 
     let filtered = exercises;
 
-    // Filter by category
     if (exerciseTab !== "all") {
       filtered = exercises.filter((ex) => {
         const category = ex.category.toLowerCase();
@@ -377,7 +369,6 @@ const Workouts = () => {
       });
     }
 
-    // Filter by search query
     if (searchQuery) {
       filtered = filtered.filter((ex) =>
         ex.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -402,159 +393,157 @@ const Workouts = () => {
           </p>
         </div>
         {isAdmin && (
-          <div className="flex gap-2">
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Exercise
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[500px]">
-                <DialogHeader>
-                  <DialogTitle>Add New Exercise</DialogTitle>
-                  <DialogDescription>
-                    Add a new exercise to your library
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 pt-4">
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Exercise
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle>Add New Exercise</DialogTitle>
+                <DialogDescription>
+                  Add a new exercise to your library
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 pt-4">
+                <div className="space-y-2">
+                  <Label>Exercise Name</Label>
+                  <Input
+                    placeholder="e.g., Muscle-up"
+                    value={newExercise.name}
+                    onChange={(e) =>
+                      setNewExercise({ ...newExercise, name: e.target.value })
+                    }
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Exercise Name</Label>
-                    <Input
-                      placeholder="e.g., Muscle-up"
-                      value={newExercise.name}
-                      onChange={(e) =>
-                        setNewExercise({ ...newExercise, name: e.target.value })
+                    <Label>Category</Label>
+                    <Select
+                      value={newExercise.category}
+                      onValueChange={(value) =>
+                        setNewExercise({ ...newExercise, category: value })
                       }
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Category</Label>
-                      <Select
-                        value={newExercise.category}
-                        onValueChange={(value) =>
-                          setNewExercise({ ...newExercise, category: value })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Core">Core</SelectItem>
-                          <SelectItem value="Upper Body">Upper Body</SelectItem>
-                          <SelectItem value="Legs">Legs</SelectItem>
-                          <SelectItem value="Full Body">Full Body</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Difficulty</Label>
-                      <Select
-                        value={newExercise.difficulty}
-                        onValueChange={(
-                          value: "Beginner" | "Intermediate" | "Advanced"
-                        ) =>
-                          setNewExercise({ ...newExercise, difficulty: value })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select level" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Beginner">Beginner</SelectItem>
-                          <SelectItem value="Intermediate">
-                            Intermediate
-                          </SelectItem>
-                          <SelectItem value="Advanced">Advanced</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Core">Core</SelectItem>
+                        <SelectItem value="Upper Body">Upper Body</SelectItem>
+                        <SelectItem value="Legs">Legs</SelectItem>
+                        <SelectItem value="Full Body">Full Body</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Equipment</Label>
-                    <Input
-                      placeholder="e.g., Bodyweight, Pull-up Bar"
-                      value={newExercise.equipment}
-                      onChange={(e) =>
-                        setNewExercise({
-                          ...newExercise,
-                          equipment: e.target.value,
-                        })
+                    <Label>Difficulty</Label>
+                    <Select
+                      value={newExercise.difficulty}
+                      onValueChange={(
+                        value: "Beginner" | "Intermediate" | "Advanced"
+                      ) =>
+                        setNewExercise({ ...newExercise, difficulty: value })
                       }
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Primary Muscles (comma-separated)</Label>
-                    <Input
-                      placeholder="e.g., Chest, Triceps, Shoulders"
-                      value={newExercise.primaryMuscles.join(", ")}
-                      onChange={(e) =>
-                        setNewExercise({
-                          ...newExercise,
-                          primaryMuscles: e.target.value
-                            .split(",")
-                            .map((m) => m.trim()),
-                        })
-                      }
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Description</Label>
-                    <Textarea
-                      placeholder="Describe the exercise and proper form..."
-                      rows={3}
-                      value={newExercise.description}
-                      onChange={(e) =>
-                        setNewExercise({
-                          ...newExercise,
-                          description: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Video URL (optional)</Label>
-                    <Input
-                      type="url"
-                      placeholder="https://youtube.com/..."
-                      value={newExercise.videoUrl}
-                      onChange={(e) =>
-                        setNewExercise({
-                          ...newExercise,
-                          videoUrl: e.target.value,
-                        })
-                      }
-                    />
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select level" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Beginner">Beginner</SelectItem>
+                        <SelectItem value="Intermediate">
+                          Intermediate
+                        </SelectItem>
+                        <SelectItem value="Advanced">Advanced</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
-                <DialogFooter>
-                  <Button
-                    variant="outline"
-                    onClick={() => setIsDialogOpen(false)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleCreateExercise}
-                    disabled={
-                      !newExercise.name ||
-                      !newExercise.category ||
-                      !newExercise.description
+
+                <div className="space-y-2">
+                  <Label>Equipment</Label>
+                  <Input
+                    placeholder="e.g., Bodyweight, Pull-up Bar"
+                    value={newExercise.equipment}
+                    onChange={(e) =>
+                      setNewExercise({
+                        ...newExercise,
+                        equipment: e.target.value,
+                      })
                     }
-                  >
-                    Add Exercise
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </div>
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Primary Muscles (comma-separated)</Label>
+                  <Input
+                    placeholder="e.g., Chest, Triceps, Shoulders"
+                    value={newExercise.primaryMuscles.join(", ")}
+                    onChange={(e) =>
+                      setNewExercise({
+                        ...newExercise,
+                        primaryMuscles: e.target.value
+                          .split(",")
+                          .map((m) => m.trim()),
+                      })
+                    }
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Description</Label>
+                  <Textarea
+                    placeholder="Describe the exercise and proper form..."
+                    rows={3}
+                    value={newExercise.description}
+                    onChange={(e) =>
+                      setNewExercise({
+                        ...newExercise,
+                        description: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Video URL (optional)</Label>
+                  <Input
+                    type="url"
+                    placeholder="https://youtube.com/..."
+                    value={newExercise.videoUrl}
+                    onChange={(e) =>
+                      setNewExercise({
+                        ...newExercise,
+                        videoUrl: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleCreateExercise}
+                  disabled={
+                    !newExercise.name ||
+                    !newExercise.category ||
+                    !newExercise.description
+                  }
+                >
+                  Add Exercise
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         )}
       </div>
 
@@ -626,23 +615,18 @@ const Workouts = () => {
 
       {/* Main Content */}
       <Tabs value={selectedTab} onValueChange={setSelectedTab}>
-        <TabsList className="grid w-full max-w-md grid-cols-2">
+        <TabsList className="grid w-full max-w-2xl grid-cols-3">
           <TabsTrigger value="exercises">Exercise Library</TabsTrigger>
           <TabsTrigger value="templates">Workout Templates</TabsTrigger>
+          <TabsTrigger value="assignments">Assigned</TabsTrigger>
         </TabsList>
 
         {/* Exercise Library Tab */}
         <TabsContent value="exercises" className="space-y-4">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Exercise Library</CardTitle>
-                  <CardDescription>
-                    Browse exercises by category
-                  </CardDescription>
-                </div>
-              </div>
+              <CardTitle>Exercise Library</CardTitle>
+              <CardDescription>Browse exercises by category</CardDescription>
             </CardHeader>
             <CardContent>
               {/* Search */}
@@ -711,7 +695,6 @@ const Workouts = () => {
                                         await deleteExercise({
                                           exerciseId: exercise._id,
                                         });
-                                        console.log("Exercise deleted!");
                                       } catch (error) {
                                         console.error(
                                           "Error deleting exercise:",
@@ -754,7 +737,7 @@ const Workouts = () => {
                     <AlertCircle className="h-4 w-4" />
                     <AlertDescription>
                       {exercises.length === 0
-                        ? "No exercises available. Import data from Google Sheets in Settings."
+                        ? "No exercises available. Add exercises to get started."
                         : "No exercises found matching your search."}
                     </AlertDescription>
                   </Alert>
@@ -1086,7 +1069,6 @@ const Workouts = () => {
                                     await deleteTemplate({
                                       templateId: template._id,
                                     });
-                                    console.log("Template deleted!");
                                   } catch (error) {
                                     console.error(
                                       "Error deleting template:",
@@ -1150,8 +1132,94 @@ const Workouts = () => {
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
-                    No workout templates available. Import data from Google
-                    Sheets in Settings.
+                    No workout templates available. Create templates to get
+                    started.
+                  </AlertDescription>
+                </Alert>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* My Assignments Tab */}
+        <TabsContent value="assignments" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>My Workout Assignments</CardTitle>
+              <CardDescription>
+                Workouts you've assigned to trainees
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {myAssignments.length > 0 ? (
+                <div className="space-y-3">
+                  {myAssignments.map((assignment) => (
+                    <Card key={assignment._id}>
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between">
+                          <div className="space-y-2 flex-1">
+                            <div>
+                              <h3 className="font-semibold">
+                                {assignment.templateName}
+                              </h3>
+                              <p className="text-sm text-muted-foreground">
+                                Assigned to:{" "}
+                                <span className="font-medium text-foreground">
+                                  {assignment.traineeName}
+                                </span>
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                              <span>
+                                Assigned{" "}
+                                {new Date(
+                                  assignment.assignedAt
+                                ).toLocaleDateString()}
+                              </span>
+                              {assignment.scheduledDays &&
+                                assignment.scheduledDays.length > 0 && (
+                                  <div className="flex items-center gap-1">
+                                    <span>Schedule:</span>
+                                    <div className="flex gap-1">
+                                      {assignment.scheduledDays.map((day) => (
+                                        <Badge
+                                          key={day}
+                                          variant="secondary"
+                                          className="text-xs"
+                                        >
+                                          {day.substring(0, 3)}
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                            </div>
+                            {assignment.notes && (
+                              <p className="text-sm text-muted-foreground italic">
+                                {assignment.notes}
+                              </p>
+                            )}
+                          </div>
+                          <Badge
+                            variant={
+                              assignment.status === "active"
+                                ? "default"
+                                : "secondary"
+                            }
+                          >
+                            {assignment.status}
+                          </Badge>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    No assignments yet. Create workout templates and assign them
+                    to trainees.
                   </AlertDescription>
                 </Alert>
               )}
@@ -1159,6 +1227,8 @@ const Workouts = () => {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* View Template Dialog */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
         <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -1168,7 +1238,6 @@ const Workouts = () => {
 
           {viewTemplate && (
             <div className="space-y-4 pt-4">
-              {/* Template Info */}
               <div className="grid grid-cols-3 gap-4 p-4 bg-muted rounded-lg">
                 <div>
                   <div className="text-sm text-muted-foreground">
@@ -1200,7 +1269,6 @@ const Workouts = () => {
 
               <Separator />
 
-              {/* Exercise List */}
               <div className="space-y-3">
                 <h3 className="font-semibold">Exercises</h3>
                 {viewTemplate.exercisesWithDetails?.map((item, index) => {
@@ -1254,20 +1322,6 @@ const Workouts = () => {
                                 Note: {item.notes}
                               </div>
                             )}
-                            <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
-                              <Zap className="h-3 w-3" />
-                              <span>{exercise.equipment}</span>
-                              {exercise.primaryMuscles &&
-                                exercise.primaryMuscles.length > 0 && (
-                                  <>
-                                    <span>•</span>
-                                    <Target className="h-3 w-3" />
-                                    <span>
-                                      {exercise.primaryMuscles.join(", ")}
-                                    </span>
-                                  </>
-                                )}
-                            </div>
                           </div>
                         </div>
                       </CardContent>
@@ -1289,6 +1343,7 @@ const Workouts = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Assign Workout Dialog */}
       <Dialog open={isAssignDialogOpen} onOpenChange={setIsAssignDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -1299,34 +1354,35 @@ const Workouts = () => {
           </DialogHeader>
 
           <div className="space-y-4 pt-4">
-            {/* Select Trainee */}
             <div className="space-y-2">
               <Label>Select Trainee</Label>
               <Select
-                value={assignmentForm.traineeId}
-                onValueChange={(value: Id<"users">) =>
-                  setAssignmentForm({ ...assignmentForm, traineeId: value })
+                value={assignmentForm.traineeId || ""}
+                onValueChange={(value: string) =>
+                  setAssignmentForm({
+                    ...assignmentForm,
+                    traineeId: value as Id<"users">,
+                  })
                 }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Choose a trainee" />
                 </SelectTrigger>
                 <SelectContent>
-                  {allTrainees.map((trainee) => (
+                  {trainees.map((trainee) => (
                     <SelectItem key={trainee._id} value={trainee._id}>
                       {trainee.name} ({trainee.email})
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {allTrainees.length === 0 && (
+              {trainees.length === 0 && (
                 <p className="text-xs text-muted-foreground">
                   No trainees available. Add trainees in the Clients page.
                 </p>
               )}
             </div>
 
-            {/* Schedule Days */}
             <div className="space-y-2">
               <Label>Schedule (Select Days)</Label>
               <div className="grid grid-cols-2 gap-2">
@@ -1356,7 +1412,6 @@ const Workouts = () => {
               </div>
             </div>
 
-            {/* Notes */}
             <div className="space-y-2">
               <Label>Notes (optional)</Label>
               <Textarea
@@ -1372,7 +1427,6 @@ const Workouts = () => {
               />
             </div>
 
-            {/* Selected Days Preview */}
             {assignmentForm.scheduledDays.length > 0 && (
               <div className="p-3 bg-muted rounded-lg">
                 <div className="text-sm font-medium mb-1">

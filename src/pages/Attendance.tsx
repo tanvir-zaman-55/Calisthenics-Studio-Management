@@ -35,14 +35,23 @@ const Attendance = () => {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [selectedClass, setSelectedClass] = useState<Id<"classes"> | "">("");
 
-  // Get all active classes
-  const classes = useQuery(api.classes.getAllClasses) ?? [];
+  // Get all active classes (filtered by instructor for admins)
+  const classes =
+    useQuery(
+      api.classes.getAllClasses,
+      currentUser
+        ? {
+            instructorId: currentUser._id,
+            role: currentUser.role,
+          }
+        : "skip"
+    ) ?? [];
 
   // Get attendance for selected class and date
   const classAttendance =
     useQuery(
       api.attendance.getClassAttendance,
-      selectedClass && selectedClass !== "" && selectedDate
+      selectedClass && selectedDate && currentUser
         ? {
             classId: selectedClass,
             scheduleDate: new Date(
@@ -50,6 +59,8 @@ const Attendance = () => {
               selectedDate.getMonth(),
               selectedDate.getDate()
             ).getTime(),
+            requestingAdminId: currentUser._id,
+            requestingRole: currentUser.role,
           }
         : "skip"
     ) ?? [];

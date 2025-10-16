@@ -1,7 +1,6 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
 
-// Get all trainees with their stats
 // Get all trainees with their stats (filtered by admin for regular admins)
 export const getAllTraineesWithStats = query({
   args: {

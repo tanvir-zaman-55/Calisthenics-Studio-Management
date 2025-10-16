@@ -89,11 +89,9 @@ export const createUser = mutation({
     const userId = await ctx.db.insert("users", {
       name: args.name,
       email: args.email,
+      password: "temp123", // Temporary password - user should change
       phone: args.phone,
       role: args.role,
-      status: "active",
-      passwordHash: "temp_hash_" + now, // Temporary
-      joinedAt: now,
       assignedAdminId: args.assignedAdminId,
       weeklyGoal: args.weeklyGoal,
       createdAt: now,
@@ -103,7 +101,43 @@ export const createUser = mutation({
     return userId;
   },
 });
+// Get trainees with no assigned admin
+export const getUnassignedTrainees = query({
+  handler: async (ctx) => {
+    const trainees = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("role"), "trainee"))
+      .collect();
 
+    // Filter to only unassigned
+    return trainees.filter((t) => !t.assignedAdminId);
+  },
+});
+
+// Claim an unassigned trainee
+export const claimTrainee = mutation({
+  args: {
+    traineeId: v.id("users"),
+    adminId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const trainee = await ctx.db.get(args.traineeId);
+    if (!trainee || trainee.role !== "trainee") {
+      throw new Error("Invalid trainee");
+    }
+
+    if (trainee.assignedAdminId) {
+      throw new Error("Trainee already assigned to another admin");
+    }
+
+    await ctx.db.patch(args.traineeId, {
+      assignedAdminId: args.adminId,
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
 // Update user
 export const updateUser = mutation({
   args: {
@@ -124,9 +158,8 @@ export const updateUser = mutation({
     return userId;
   },
 });
-
-// Simple login (temporary - just checks if user exists)
-export const simpleLogin = mutation({
+// Check if user exists by email
+export const checkUserByEmail = query({
   args: { email: v.string() },
   handler: async (ctx, args) => {
     const user = await ctx.db
@@ -134,19 +167,43 @@ export const simpleLogin = mutation({
       .withIndex("by_email", (q) => q.eq("email", args.email))
       .first();
 
-    if (!user) {
+    if (!user) return null;
+
+    return {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      assignedAdminId: user.assignedAdminId,
+    };
+  },
+});
+
+// Assign existing trainee to admin
+export const assignExistingTrainee = mutation({
+  args: {
+    traineeId: v.id("users"),
+    adminId: v.id("users"),
+    phone: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const trainee = await ctx.db.get(args.traineeId);
+    if (!trainee) {
       throw new Error("User not found");
     }
 
-    if (user.status === "inactive") {
-      throw new Error("User account is inactive");
+    if (trainee.role !== "trainee") {
+      throw new Error("User is not a trainee");
     }
 
-    return {
-      userId: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-    };
+    // Update trainee with new admin and optional phone
+    await ctx.db.patch(args.traineeId, {
+      assignedAdminId: args.adminId,
+      ...(args.phone && { phone: args.phone }),
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
   },
 });

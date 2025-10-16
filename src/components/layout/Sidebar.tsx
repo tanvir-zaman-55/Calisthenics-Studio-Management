@@ -30,6 +30,8 @@ import { useAuth } from "@/context/AuthContext";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { LogOut } from "lucide-react";
+
 interface NavItem {
   to: string;
   icon: React.ElementType;
@@ -102,8 +104,13 @@ const roleConfig = {
 };
 
 const SidebarContent = ({ onLinkClick }: { onLinkClick?: () => void }) => {
-  const { currentUserRole, currentUser, setDevRole, setCurrentUserById } =
-    useAuth();
+  const {
+    currentUserRole,
+    currentUser,
+    setDevRole,
+    setCurrentUserById,
+    logout,
+  } = useAuth();
   const RoleIcon = roleConfig[currentUserRole].icon;
   const allUsers = useQuery(api.user.getAllUsers);
   return (
@@ -245,6 +252,22 @@ const SidebarContent = ({ onLinkClick }: { onLinkClick?: () => void }) => {
             </Select>
           </div>
         </div>
+      </div>
+
+      {/* Logout Button */}
+      <div className="mt-2">
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={() => {
+            if (confirm("Are you sure you want to logout?")) {
+              logout();
+            }
+          }}
+        >
+          <LogOut className="h-4 w-4 mr-2" />
+          Logout
+        </Button>
       </div>
     </div>
   );

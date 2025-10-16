@@ -30,7 +30,7 @@ import { api } from "../../convex/_generated/api";
 const Admins = () => {
   const { currentUser } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-
+  const register = useMutation(api.auth.register);
   // Load admins
   const admins = useQuery(api.user.getUsersByRole, { role: "admin" }) ?? [];
 
@@ -46,13 +46,23 @@ const Admins = () => {
   const handleCreateAdmin = async () => {
     if (!currentUser) return;
 
+    // Generate temporary password
+    const tempPassword = `Admin${Math.random().toString(36).slice(-8)}!`;
+
     try {
-      await createUser({
+      // Use the register mutation instead of createUser
+      await register({
         name: newAdmin.name,
         email: newAdmin.email,
+        password: tempPassword,
         phone: newAdmin.phone,
         role: "admin",
       });
+
+      // Show the temporary password
+      alert(
+        `Admin added successfully!\n\nTemporary Password: ${tempPassword}\n\nPlease share this with the new admin. They should change it after first login.`
+      );
 
       setNewAdmin({
         name: "",
@@ -60,7 +70,6 @@ const Admins = () => {
         phone: "",
       });
       setIsDialogOpen(false);
-      alert("Admin added successfully!");
     } catch (error) {
       console.error("Error creating admin:", error);
       alert("Failed to add admin");

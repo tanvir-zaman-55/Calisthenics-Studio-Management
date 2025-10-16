@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from "react";
+"use client";
+
+import React, { useState } from "react";
 import {
   Card,
   CardContent,
@@ -12,26 +14,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Play,
   Clock,
   Target,
-  TrendingUp,
   Calendar,
   CheckCircle2,
   Circle,
-  Flame,
-  Award,
   Dumbbell,
   AlertCircle,
 } from "lucide-react";
@@ -73,15 +63,6 @@ interface WorkoutTemplate {
   assignmentNotes?: string;
 }
 
-interface WorkoutLog {
-  _id: string;
-  workoutId: string;
-  date: string;
-  completedExercises: string[];
-  notes: string;
-  duration: number;
-}
-
 export default function TraineeWorkouts() {
   const [currentWorkout, setCurrentWorkout] = useState<WorkoutTemplate | null>(
     null
@@ -89,23 +70,11 @@ export default function TraineeWorkouts() {
   const [isWorkoutActive, setIsWorkoutActive] = useState(false);
   const [completedExercises, setCompletedExercises] = useState<
     Set<Id<"exercises">>
-  >(new Set()); // ✅
+  >(new Set());
   const [workoutNotes, setWorkoutNotes] = useState("");
   const [workoutStartTime, setWorkoutStartTime] = useState<number | null>(null);
 
-  // Load data from Convex
-  // NEW - Load assigned workouts only
   const { currentUser } = useAuth();
-  const exercises =
-    useQuery(
-      api.exercises.getAllExercises,
-      currentUser
-        ? {
-            creatorId: currentUser._id,
-            role: currentUser.role,
-          }
-        : "skip"
-    ) ?? [];
 
   // Get assignments for this trainee
   const myAssignments =
@@ -115,7 +84,6 @@ export default function TraineeWorkouts() {
     ) ?? [];
 
   // Extract templates from assignments
-  // Extract templates with assignment info
   const workoutTemplates: WorkoutTemplate[] = myAssignments
     .filter((assignment) => assignment.template)
     .map((assignment) => ({
@@ -126,18 +94,33 @@ export default function TraineeWorkouts() {
       assignmentNotes: assignment.notes,
     }));
 
-  // Keep workoutLogs in localStorage for now (we'll migrate this later)
-  const [workoutLogs, setWorkoutLogs] = useState<WorkoutLog[]>([]);
+  // Load workout logs
+  const workoutLogs =
+    useQuery(
+      api.workoutLogs.getTraineeWorkoutLogs,
+      currentUser ? { traineeId: currentUser._id } : "skip"
+    ) ?? [];
 
-  useEffect(() => {
-    const storedLogs = localStorage.getItem("workoutLogs");
-    if (storedLogs) {
-      setWorkoutLogs(JSON.parse(storedLogs));
-    }
-  }, []);
+  const workoutStats = useQuery(
+    api.workoutLogs.getWorkoutStats,
+    currentUser ? { traineeId: currentUser._id } : "skip"
+  );
+
+  const logWorkout = useMutation(api.workoutLogs.logWorkout);
 
   const getExerciseById = (id: Id<"exercises">): Exercise | undefined => {
-    return exercises.find((ex) => ex._id === id);
+    // Get exercise from assignment templates
+    for (const assignment of myAssignments) {
+      if (assignment?.template?.exercisesWithDetails) {
+        const found = assignment.template.exercisesWithDetails.find(
+          (ex) => ex.exerciseDetails?._id === id
+        );
+        if (found?.exerciseDetails) {
+          return found.exerciseDetails;
+        }
+      }
+    }
+    return undefined;
   };
 
   const startWorkout = (template: WorkoutTemplate) => {
@@ -158,28 +141,30 @@ export default function TraineeWorkouts() {
     setCompletedExercises(newCompleted);
   };
 
-  const completeWorkout = () => {
-    if (!currentWorkout || !workoutStartTime) return;
+  const completeWorkout = async () => {
+    if (!currentWorkout || !workoutStartTime || !currentUser) return;
 
     const duration = Math.floor((Date.now() - workoutStartTime) / 1000 / 60);
 
-    const newLog: WorkoutLog = {
-      _id: Date.now().toString(),
-      workoutId: currentWorkout._id,
-      date: new Date().toISOString(),
-      completedExercises: Array.from(completedExercises),
-      notes: workoutNotes,
-      duration,
-    };
+    try {
+      await logWorkout({
+        traineeId: currentUser._id,
+        templateId: currentWorkout._id,
+        completedExercises: Array.from(completedExercises),
+        duration,
+        notes: workoutNotes,
+      });
 
-    const updatedLogs = [...workoutLogs, newLog];
-    setWorkoutLogs(updatedLogs);
-    localStorage.setItem("workoutLogs", JSON.stringify(updatedLogs));
+      alert("Workout logged successfully!");
 
-    setIsWorkoutActive(false);
-    setCompletedExercises(new Set());
-    setWorkoutNotes("");
-    setWorkoutStartTime(null);
+      setIsWorkoutActive(false);
+      setCompletedExercises(new Set());
+      setWorkoutNotes("");
+      setWorkoutStartTime(null);
+    } catch (error) {
+      console.error("Error logging workout:", error);
+      alert("Failed to log workout");
+    }
   };
 
   const calculateProgress = () => {
@@ -191,7 +176,7 @@ export default function TraineeWorkouts() {
 
   const getRecentWorkouts = () => {
     return workoutLogs
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .sort((a, b) => b.completedAt - a.completedAt)
       .slice(0, 5);
   };
 
@@ -200,43 +185,27 @@ export default function TraineeWorkouts() {
   };
 
   const getWeeklyStats = () => {
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-
-    const weeklyLogs = workoutLogs.filter(
-      (log) => new Date(log.date) >= oneWeekAgo
-    );
-
     return {
-      workoutsCompleted: weeklyLogs.length,
-      totalMinutes: weeklyLogs.reduce((sum, log) => sum + log.duration, 0),
-      averageCompletion:
-        weeklyLogs.length > 0
-          ? Math.round(
-              weeklyLogs.reduce((sum, log) => {
-                const workout = workoutTemplates.find(
-                  (w) => w._id === log.workoutId
-                );
-                if (!workout || !workout.exercises) return sum;
-                return (
-                  sum +
-                  (log.completedExercises.length / workout.exercises.length) *
-                    100
-                );
-              }, 0) / weeklyLogs.length
-            )
-          : 0,
+      workoutsCompleted: workoutStats?.workoutsThisWeek ?? 0,
+      totalMinutes: workoutStats?.totalMinutes ?? 0,
+      averageCompletion: 100,
     };
   };
 
-  if (exercises.length === 0 && workoutTemplates.length === 0) {
+  if (workoutTemplates.length === 0) {
     return (
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
+        <div className="mb-6">
+          <h1 className="text-2xl sm:text-3xl font-bold">My Workouts</h1>
+          <p className="text-muted-foreground mt-1">
+            Track your progress and complete your training
+          </p>
+        </div>
         <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
             No workouts available yet. Your trainer will assign workouts to you
-            soon. Please contact your admin if you think this is an error.
+            soon.
           </AlertDescription>
         </Alert>
       </div>
@@ -247,15 +216,16 @@ export default function TraineeWorkouts() {
   const weeklyStats = getWeeklyStats();
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 sm:p-6 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">My Workouts</h1>
-        <p className="text-muted-foreground">
+        <h1 className="text-2xl sm:text-3xl font-bold">My Workouts</h1>
+        <p className="text-muted-foreground mt-1">
           Track your progress and complete your training
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      {/* Stats */}
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
@@ -286,7 +256,7 @@ export default function TraineeWorkouts() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="sm:col-span-2 lg:col-span-1">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
               Avg Completion
@@ -305,8 +275,8 @@ export default function TraineeWorkouts() {
       </div>
 
       <Tabs defaultValue="today" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="today">Today's Workout</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="today">Today</TabsTrigger>
           <TabsTrigger value="all">All Programs</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
@@ -315,7 +285,7 @@ export default function TraineeWorkouts() {
           {isWorkoutActive && currentWorkout ? (
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                   <div>
                     <CardTitle className="flex items-center gap-2">
                       <Play className="h-5 w-5 text-green-500" />
@@ -342,7 +312,7 @@ export default function TraineeWorkouts() {
                 </div>
 
                 <div className="space-y-3">
-                  {(currentWorkout.exercises || []).map((workoutEx, index) => {
+                  {(currentWorkout.exercises || []).map((workoutEx) => {
                     const exercise = getExerciseById(workoutEx.exerciseId);
                     if (!exercise) return null;
 
@@ -362,9 +332,9 @@ export default function TraineeWorkouts() {
                               }
                               className="mt-1"
                             />
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="font-medium">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <span className="font-medium break-words">
                                   {exercise.name}
                                 </span>
                                 <Badge variant="secondary" className="text-xs">
@@ -400,7 +370,7 @@ export default function TraineeWorkouts() {
                   />
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-col sm:flex-row">
                   <Button
                     onClick={completeWorkout}
                     className="flex-1"
@@ -416,6 +386,7 @@ export default function TraineeWorkouts() {
                       setCompletedExercises(new Set());
                       setWorkoutStartTime(null);
                     }}
+                    className="sm:w-auto"
                   >
                     Cancel
                   </Button>
@@ -448,12 +419,11 @@ export default function TraineeWorkouts() {
                         </Badge>
                       </div>
 
-                      {/* Show schedule */}
                       {todaysWorkout.scheduledDays &&
                         todaysWorkout.scheduledDays.length > 0 && (
                           <div className="flex items-start gap-2 text-sm">
-                            <Calendar className="h-4 w-4 text-muted-foreground mt-0.5" />
-                            <div>
+                            <Calendar className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                            <div className="min-w-0 flex-1">
                               <div className="font-medium text-xs text-muted-foreground mb-1">
                                 Scheduled Days:
                               </div>
@@ -472,15 +442,14 @@ export default function TraineeWorkouts() {
                           </div>
                         )}
 
-                      {/* Show assignment notes */}
                       {todaysWorkout.assignmentNotes && (
                         <div className="flex items-start gap-2 text-sm p-2 bg-muted rounded">
                           <AlertCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                          <div>
+                          <div className="min-w-0 flex-1">
                             <div className="font-medium text-xs mb-0.5">
                               Trainer Notes:
                             </div>
-                            <div className="text-muted-foreground">
+                            <div className="text-muted-foreground break-words">
                               {todaysWorkout.assignmentNotes}
                             </div>
                           </div>
@@ -507,7 +476,7 @@ export default function TraineeWorkouts() {
                             return (
                               <div
                                 key={exercise._id}
-                                className="text-sm text-muted-foreground"
+                                className="text-sm text-muted-foreground break-words"
                               >
                                 • {exercise.name} - {workoutEx.sets}×
                                 {workoutEx.reps}
@@ -547,12 +516,14 @@ export default function TraineeWorkouts() {
         </TabsContent>
 
         <TabsContent value="all" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2">
             {workoutTemplates.map((template) => (
               <Card key={template._id}>
                 <CardHeader>
-                  <CardTitle>{template.name}</CardTitle>
-                  <CardDescription>{template.description}</CardDescription>
+                  <CardTitle className="break-words">{template.name}</CardTitle>
+                  <CardDescription className="break-words">
+                    {template.description}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
@@ -567,7 +538,6 @@ export default function TraineeWorkouts() {
                       </Badge>
                     </div>
 
-                    {/* Show schedule */}
                     {template.scheduledDays &&
                       template.scheduledDays.length > 0 && (
                         <div className="text-xs text-muted-foreground">
@@ -596,16 +566,6 @@ export default function TraineeWorkouts() {
               </Card>
             ))}
           </div>
-
-          {workoutTemplates.length === 0 && (
-            <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                No workout programs available. Your trainer will assign programs
-                soon.
-              </AlertDescription>
-            </Alert>
-          )}
         </TabsContent>
 
         <TabsContent value="history" className="space-y-4">
@@ -613,7 +573,7 @@ export default function TraineeWorkouts() {
             <div className="space-y-3">
               {getRecentWorkouts().map((log) => {
                 const workout = workoutTemplates.find(
-                  (w) => w._id === log.workoutId
+                  (w) => w._id === log.templateId
                 );
                 if (!workout) return null;
 
@@ -626,18 +586,23 @@ export default function TraineeWorkouts() {
                 return (
                   <Card key={log._id}>
                     <CardContent className="p-4">
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1">
-                          <div className="font-medium">{workout.name}</div>
-                          <div className="text-sm text-muted-foreground">
-                            {new Date(log.date).toLocaleDateString("en-US", {
-                              weekday: "short",
-                              year: "numeric",
-                              month: "short",
-                              day: "numeric",
-                            })}
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="font-medium break-words">
+                            {workout.name}
                           </div>
-                          <div className="flex items-center gap-3 text-sm">
+                          <div className="text-sm text-muted-foreground">
+                            {new Date(log.completedAt).toLocaleDateString(
+                              "en-US",
+                              {
+                                weekday: "short",
+                                year: "numeric",
+                                month: "short",
+                                day: "numeric",
+                              }
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 text-sm flex-wrap">
                             <span className="flex items-center gap-1">
                               <Clock className="h-3 w-3" />
                               {log.duration} min
@@ -648,7 +613,7 @@ export default function TraineeWorkouts() {
                             </span>
                           </div>
                           {log.notes && (
-                            <p className="text-sm text-muted-foreground italic mt-2">
+                            <p className="text-sm text-muted-foreground italic mt-2 break-words">
                               "{log.notes}"
                             </p>
                           )}
@@ -657,6 +622,7 @@ export default function TraineeWorkouts() {
                           variant={
                             completionRate === 100 ? "default" : "secondary"
                           }
+                          className="flex-shrink-0"
                         >
                           {log.completedExercises.length}/
                           {workout.exercises?.length || 0}

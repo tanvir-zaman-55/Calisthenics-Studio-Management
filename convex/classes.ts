@@ -1,7 +1,6 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 
-// Get all classes with enrollment counts
 // Get all classes with enrollment counts (filtered by instructor for admins)
 export const getAllClasses = query({
   args: {
@@ -9,37 +8,46 @@ export const getAllClasses = query({
     role: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    let classesQuery = ctx.db
+    let classes = await ctx.db
       .query("classes")
-      .filter((q) => q.eq(q.field("status"), "active"));
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .collect();
 
-    // If regular admin (not super admin), filter to only their classes
-    let classes = await classesQuery.collect();
-
+    // Filter by instructor for regular admins
     if (args.role === "admin" && args.instructorId) {
       classes = classes.filter((c) => c.instructorId === args.instructorId);
     }
 
-    // Get enrollment count for each class
-    const classesWithEnrollments = await Promise.all(
-      classes.map(async (classItem) => {
-        const enrollments = await ctx.db
-          .query("classEnrollments")
-          .withIndex("by_class", (q) => q.eq("classId", classItem._id))
-          .filter((q) => q.eq(q.field("status"), "active"))
-          .collect();
+    // Get enrollment count and instructor details for each class
+    const classesWithDetails = [];
 
-        const instructor = await ctx.db.get(classItem.instructorId);
+    for (const classItem of classes) {
+      const instructor = await ctx.db.get(classItem.instructorId);
 
-        return {
-          ...classItem,
-          enrolled: enrollments.length,
-          instructorName: instructor?.name,
-        };
-      })
-    );
+      // Skip if instructor doesn't exist or isn't an admin/super_admin
+      if (
+        !instructor ||
+        (instructor.role !== "admin" && instructor.role !== "super_admin")
+      ) {
+        continue;
+      }
 
-    return classesWithEnrollments;
+      const enrollments = await ctx.db
+        .query("classEnrollments")
+        .withIndex("by_class", (q) => q.eq("classId", classItem._id))
+        .filter((q) => q.eq(q.field("status"), "active"))
+        .collect();
+
+      classesWithDetails.push({
+        ...classItem,
+        enrolled: enrollments.length,
+        instructorName: instructor.name,
+        instructorEmail: instructor.email,
+        difficulty: classItem.level, // Map level to difficulty for UI
+      });
+    }
+
+    return classesWithDetails;
   },
 });
 
@@ -108,33 +116,35 @@ export const getClassWithDetails = query({
   },
 });
 
-// Create new class
+// Create a new class
 export const createClass = mutation({
   args: {
     name: v.string(),
     type: v.string(),
+    difficulty: v.union(
+      v.literal("Beginner"),
+      v.literal("Intermediate"),
+      v.literal("Advanced")
+    ),
     description: v.string(),
-    level: v.string(),
-    capacity: v.number(),
     duration: v.number(),
+    capacity: v.number(),
+    schedule: v.string(),
     instructorId: v.id("users"),
-    location: v.string(),
   },
   handler: async (ctx, args) => {
-    const now = Date.now();
-
     const classId = await ctx.db.insert("classes", {
       name: args.name,
       type: args.type,
+      level: args.difficulty, // Map difficulty to level for schema
       description: args.description,
-      level: args.level,
-      capacity: args.capacity,
       duration: args.duration,
+      capacity: args.capacity,
+      location: args.schedule, // Map schedule to location for schema
       instructorId: args.instructorId,
-      location: args.location,
       status: "active",
-      createdAt: now,
-      updatedAt: now,
+      createdAt: Date.now(),
+      updatedAt: Date.now(), // ← ADD THIS
     });
 
     return classId;
@@ -174,6 +184,50 @@ export const deactivateClass = mutation({
       status: "inactive",
       updatedAt: Date.now(),
     });
+
+    return { success: true };
+  },
+});
+// Delete classes with invalid instructors (cleanup utility)
+export const cleanupOrphanedClasses = mutation({
+  handler: async (ctx) => {
+    const allClasses = await ctx.db.query("classes").collect();
+
+    let deletedCount = 0;
+    for (const classItem of allClasses) {
+      const instructor = await ctx.db.get(classItem.instructorId);
+
+      // Delete if instructor doesn't exist or isn't an admin
+      if (
+        !instructor ||
+        (instructor.role !== "admin" && instructor.role !== "super_admin")
+      ) {
+        await ctx.db.delete(classItem._id);
+        deletedCount++;
+      }
+    }
+
+    return { deletedCount };
+  },
+});
+// Delete a class
+export const deleteClass = mutation({
+  args: {
+    classId: v.id("classes"),
+  },
+  handler: async (ctx, args) => {
+    // Delete the class
+    await ctx.db.delete(args.classId);
+
+    // Also delete all enrollments for this class
+    const enrollments = await ctx.db
+      .query("classEnrollments")
+      .withIndex("by_class", (q) => q.eq("classId", args.classId))
+      .collect();
+
+    for (const enrollment of enrollments) {
+      await ctx.db.delete(enrollment._id);
+    }
 
     return { success: true };
   },

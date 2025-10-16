@@ -16,6 +16,36 @@ export const markAttendance = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // SECURITY: Verify the admin marking attendance teaches this class
+    const classItem = await ctx.db.get(args.classId);
+    if (!classItem) {
+      throw new Error("Class not found");
+    }
+
+    const markedByUser = await ctx.db.get(args.markedBy);
+    if (
+      markedByUser?.role === "admin" &&
+      classItem.instructorId !== args.markedBy
+    ) {
+      throw new Error("You can only mark attendance for your own classes");
+    }
+
+    // SECURITY: Verify the trainee is enrolled in this class
+    const enrollment = await ctx.db
+      .query("classEnrollments")
+      .withIndex("by_trainee", (q) => q.eq("traineeId", args.traineeId))
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("classId"), args.classId),
+          q.eq(q.field("status"), "active")
+        )
+      )
+      .first();
+
+    if (!enrollment) {
+      throw new Error("Trainee is not enrolled in this class");
+    }
+
     // Check if attendance already exists for this date
     const existing = await ctx.db
       .query("attendance")
@@ -111,9 +141,20 @@ export const getClassAttendance = query({
   args: {
     classId: v.id("classes"),
     scheduleDate: v.number(),
+    requestingAdminId: v.optional(v.id("users")),
+    requestingRole: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // Get all active enrollments for this class
+    // Verify admin owns this class
+    if (args.requestingRole === "admin" && args.requestingAdminId) {
+      const classItem = await ctx.db.get(args.classId);
+      if (!classItem || classItem.instructorId !== args.requestingAdminId) {
+        // Admin doesn't teach this class - return empty
+        return [];
+      }
+    }
+
+    // Get all active enrollments for THIS SPECIFIC class
     const enrollments = await ctx.db
       .query("classEnrollments")
       .withIndex("by_class", (q) => q.eq("classId", args.classId))

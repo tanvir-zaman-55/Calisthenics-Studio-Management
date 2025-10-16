@@ -1,10 +1,21 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 
-// Get all workout templates
+// Get all workout templates (filtered by creator for regular admins)
 export const getAllTemplates = query({
-  handler: async (ctx) => {
-    return await ctx.db.query("workoutTemplates").order("desc").collect();
+  args: {
+    creatorId: v.optional(v.id("users")),
+    role: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    let templates = await ctx.db.query("workoutTemplates").collect();
+
+    // Filter for regular admins - only show templates they created
+    if (args.role === "admin" && args.creatorId) {
+      templates = templates.filter((t) => t.createdBy === args.creatorId);
+    }
+
+    return templates;
   },
 });
 

@@ -86,7 +86,7 @@ export const enrollInClass = mutation({
       throw new Error("Class is full");
     }
 
-    // Enroll
+    // Enroll (NO auto-assignment)
     const enrollmentId = await ctx.db.insert("classEnrollments", {
       classId: args.classId,
       traineeId: args.traineeId,
@@ -98,14 +98,32 @@ export const enrollInClass = mutation({
   },
 });
 
-// Drop class
+// Drop a class (mark enrollment as dropped)
 export const dropClass = mutation({
   args: {
-    enrollmentId: v.id("classEnrollments"),
+    traineeId: v.id("users"),
+    classId: v.id("classes"),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.enrollmentId, {
-      status: "dropped",
+    // Find the active enrollment
+    const enrollment = await ctx.db
+      .query("classEnrollments")
+      .withIndex("by_trainee", (q) => q.eq("traineeId", args.traineeId))
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("classId"), args.classId),
+          q.eq(q.field("status"), "active")
+        )
+      )
+      .first();
+
+    if (!enrollment) {
+      throw new Error("Not enrolled in this class");
+    }
+
+    // Mark as dropped (not cancelled)
+    await ctx.db.patch(enrollment._id, {
+      status: "dropped", // ← CHANGE FROM "cancelled" TO "dropped"
       droppedAt: Date.now(),
     });
 
@@ -127,5 +145,29 @@ export const getEnrollmentStats = query({
       active: allEnrollments.filter((e) => e.status === "active").length,
       dropped: allEnrollments.filter((e) => e.status === "dropped").length,
     };
+  },
+});
+// Cleanup utility: Remove enrollments for deleted classes or trainees
+export const cleanupOrphanedEnrollments = mutation({
+  handler: async (ctx) => {
+    const allEnrollments = await ctx.db.query("classEnrollments").collect();
+
+    let deletedCount = 0;
+    for (const enrollment of allEnrollments) {
+      // Check if class exists
+      const classItem = await ctx.db.get(enrollment.classId);
+
+      // Check if trainee exists
+      const trainee = await ctx.db.get(enrollment.traineeId);
+
+      // Delete if class or trainee no longer exists
+      if (!classItem || !trainee) {
+        await ctx.db.delete(enrollment._id);
+        deletedCount++;
+        console.log(`Deleted orphaned enrollment: ${enrollment._id}`);
+      }
+    }
+
+    return { deletedCount };
   },
 });

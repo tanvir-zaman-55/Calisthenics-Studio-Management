@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -20,29 +21,33 @@ import {
   DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/context/AuthContext";
 import {
   Plus,
-  Search,
-  Filter,
-  Clock,
   Users,
-  Dumbbell,
-  MoreVertical,
   Calendar,
   TrendingUp,
+  Clock,
+  Target,
+  User,
+  Trash2,
 } from "lucide-react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 
 const Classes = () => {
-  const { isSuperAdmin, isAdmin, isTrainee, currentUser } = useAuth();
+  const { isAdmin, isTrainee, currentUser } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  // Load classes from Convex
   // Load classes from Convex
   const classes =
     useQuery(
@@ -54,8 +59,15 @@ const Classes = () => {
           }
         : "skip"
     ) ?? [];
-  const createClass = useMutation(api.classes.createClass);
-  const deactivateClass = useMutation(api.classes.deactivateClass);
+
+  // Get my enrollments if trainee
+  const myEnrollments =
+    useQuery(
+      api.classEnrollments.getTraineeEnrollments,
+      currentUser && isTrainee ? { traineeId: currentUser._id } : "skip"
+    ) ?? [];
+
+  // Get stats
   const sessionStats = useQuery(
     api.classSessions.getSessionStats,
     currentUser
@@ -65,30 +77,32 @@ const Classes = () => {
         }
       : "skip"
   );
-  const overallAttendance = useQuery(api.attendance.getOverallAttendanceStats);
-  // For trainees - get enrollments
-  const myEnrollments =
-    useQuery(
-      api.classEnrollments.getTraineeEnrollments,
-      currentUser && isTrainee ? { traineeId: currentUser._id } : "skip"
-    ) ?? [];
 
+  const overallAttendance = useQuery(api.attendance.getOverallAttendanceStats);
+
+  // Mutations
+  const createClass = useMutation(api.classes.createClass);
+  const deleteClass = useMutation(api.classes.deleteClass);
   const enrollInClass = useMutation(api.classEnrollments.enrollInClass);
   const dropClass = useMutation(api.classEnrollments.dropClass);
 
-  // Get list of class IDs trainee is enrolled in
-  const enrolledClassIds = myEnrollments.map((e) => e.classId);
-
-  // Form state for new class
+  // Form state
   const [newClass, setNewClass] = useState({
     name: "",
     type: "",
+    difficulty: "Beginner" as "Beginner" | "Intermediate" | "Advanced",
     description: "",
-    level: "",
     capacity: 15,
-    duration: 90,
-    location: "",
+    duration: 60,
+    schedule: "",
   });
+
+  // Difficulty colors
+  const difficultyColors = {
+    Beginner: "bg-green-500/10 text-green-500",
+    Intermediate: "bg-blue-500/10 text-blue-500",
+    Advanced: "bg-red-500/10 text-red-500",
+  };
 
   const handleCreateClass = async () => {
     if (!currentUser) return;
@@ -97,26 +111,24 @@ const Classes = () => {
       await createClass({
         name: newClass.name,
         type: newClass.type,
+        difficulty: newClass.difficulty, // This will be mapped to level in the mutation
         description: newClass.description,
-        level: newClass.level,
         capacity: newClass.capacity,
         duration: newClass.duration,
+        schedule: newClass.schedule,
         instructorId: currentUser._id,
-        location: newClass.location,
       });
 
-      // Reset form
       setNewClass({
         name: "",
         type: "",
+        difficulty: "Beginner",
         description: "",
-        level: "",
         capacity: 15,
-        duration: 90,
-        location: "",
+        duration: 60,
+        schedule: "",
       });
       setIsDialogOpen(false);
-
       alert("Class created successfully!");
     } catch (error) {
       console.error("Error creating class:", error);
@@ -124,18 +136,40 @@ const Classes = () => {
     }
   };
 
-  const levelColors = {
-    Beginner: "bg-green-500/10 text-green-500",
-    Intermediate: "bg-blue-500/10 text-blue-500",
-    Advanced: "bg-red-500/10 text-red-500",
-    "All Levels": "bg-purple-500/10 text-purple-500",
+  const handleEnroll = async (classId: Id<"classes">) => {
+    if (!currentUser) return;
+
+    try {
+      await enrollInClass({
+        traineeId: currentUser._id,
+        classId: classId,
+      });
+      alert("Successfully enrolled!");
+    } catch (error) {
+      console.error("Error enrolling:", error);
+      alert(
+        error instanceof Error ? error.message : "Failed to enroll in class"
+      );
+    }
   };
 
-  const typeColors = {
-    Core: "bg-orange-500/10 text-orange-500",
-    "Upper Body": "bg-cyan-500/10 text-cyan-500",
-    Legs: "bg-pink-500/10 text-pink-500",
-    "Full Body": "bg-purple-500/10 text-purple-500",
+  const handleDrop = async (classId: Id<"classes">) => {
+    if (!currentUser) return;
+
+    try {
+      await dropClass({
+        traineeId: currentUser._id, // Now correctly passing traineeId
+        classId: classId,
+      });
+      alert("Successfully dropped class");
+    } catch (error) {
+      console.error("Error dropping class:", error);
+      alert("Failed to drop class");
+    }
+  };
+
+  const isEnrolled = (classId: Id<"classes">) => {
+    return myEnrollments.some((e) => e.classId === classId);
   };
 
   return (
@@ -145,11 +179,9 @@ const Classes = () => {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Classes</h1>
           <p className="text-muted-foreground mt-1">
-            {isSuperAdmin
-              ? "Manage all classes across the studio"
-              : isTrainee
-                ? "Browse and enroll in classes"
-                : "View and manage your classes"}
+            {isTrainee
+              ? "Browse and enroll in classes"
+              : "Manage group fitness classes"}
           </p>
         </div>
         {isAdmin && (
@@ -157,21 +189,20 @@ const Classes = () => {
             <DialogTrigger asChild>
               <Button>
                 <Plus className="h-4 w-4 mr-2" />
-                Add Class
+                Create Class
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[500px]">
               <DialogHeader>
                 <DialogTitle>Create New Class</DialogTitle>
                 <DialogDescription>
-                  Add a new class to your schedule
+                  Add a new group fitness class
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 pt-4">
                 <div className="space-y-2">
-                  <Label htmlFor="class-name">Class Name</Label>
+                  <Label>Class Name</Label>
                   <Input
-                    id="class-name"
                     placeholder="e.g., Core Fundamentals"
                     value={newClass.name}
                     onChange={(e) =>
@@ -182,34 +213,64 @@ const Classes = () => {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="class-type">Type</Label>
-                    <Input
-                      id="class-type"
-                      placeholder="Core, Upper Body, Legs"
+                    <Label>Type</Label>
+                    <Select
                       value={newClass.type}
-                      onChange={(e) =>
-                        setNewClass({ ...newClass, type: e.target.value })
+                      onValueChange={(value) =>
+                        setNewClass({ ...newClass, type: value })
                       }
-                    />
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Core">Core</SelectItem>
+                        <SelectItem value="Upper Body">Upper Body</SelectItem>
+                        <SelectItem value="Lower Body">Lower Body</SelectItem>
+                        <SelectItem value="Full Body">Full Body</SelectItem>
+                        <SelectItem value="Flexibility">Flexibility</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
+
                   <div className="space-y-2">
-                    <Label htmlFor="class-level">Level</Label>
-                    <Input
-                      id="class-level"
-                      placeholder="Beginner, Intermediate"
-                      value={newClass.level}
-                      onChange={(e) =>
-                        setNewClass({ ...newClass, level: e.target.value })
-                      }
-                    />
+                    <Label>Difficulty</Label>
+                    <Select
+                      value={newClass.difficulty}
+                      onValueChange={(
+                        value: "Beginner" | "Intermediate" | "Advanced"
+                      ) => setNewClass({ ...newClass, difficulty: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Beginner">Beginner</SelectItem>
+                        <SelectItem value="Intermediate">
+                          Intermediate
+                        </SelectItem>
+                        <SelectItem value="Advanced">Advanced</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Description</Label>
+                  <Textarea
+                    placeholder="Describe the class..."
+                    rows={3}
+                    value={newClass.description}
+                    onChange={(e) =>
+                      setNewClass({ ...newClass, description: e.target.value })
+                    }
+                  />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="capacity">Capacity</Label>
+                    <Label>Capacity</Label>
                     <Input
-                      id="capacity"
                       type="number"
                       value={newClass.capacity}
                       onChange={(e) =>
@@ -220,10 +281,10 @@ const Classes = () => {
                       }
                     />
                   </div>
+
                   <div className="space-y-2">
-                    <Label htmlFor="duration">Duration (min)</Label>
+                    <Label>Duration (min)</Label>
                     <Input
-                      id="duration"
                       type="number"
                       value={newClass.duration}
                       onChange={(e) =>
@@ -237,26 +298,12 @@ const Classes = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="location">Location</Label>
+                  <Label>Schedule</Label>
                   <Input
-                    id="location"
-                    placeholder="Studio A"
-                    value={newClass.location}
+                    placeholder="e.g., Mon/Wed/Fri 6:00 PM"
+                    value={newClass.schedule}
                     onChange={(e) =>
-                      setNewClass({ ...newClass, location: e.target.value })
-                    }
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="description">Description</Label>
-                  <Textarea
-                    id="description"
-                    placeholder="Brief description of the class..."
-                    rows={3}
-                    value={newClass.description}
-                    onChange={(e) =>
-                      setNewClass({ ...newClass, description: e.target.value })
+                      setNewClass({ ...newClass, schedule: e.target.value })
                     }
                   />
                 </div>
@@ -286,17 +333,15 @@ const Classes = () => {
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Classes</CardTitle>
-            <Dumbbell className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">
+              Active Classes
+            </CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{classes.length}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              {isSuperAdmin
-                ? "All classes"
-                : isTrainee
-                  ? "Available"
-                  : "Your classes"}
+              Available to join
             </p>
           </CardContent>
         </Card>
@@ -304,18 +349,16 @@ const Classes = () => {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              {isTrainee ? "My Enrollments" : "Total Students"}
+              Total Enrolled
             </CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
+            <Target className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {isTrainee
-                ? myEnrollments.length
-                : classes.reduce((sum, c) => sum + c.enrolled, 0)}
+              {classes.reduce((sum, c) => sum + (c.enrolled || 0), 0)}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {isTrainee ? "Classes enrolled" : "Enrolled"}
+              Across all classes
             </p>
           </CardContent>
         </Card>
@@ -351,199 +394,139 @@ const Classes = () => {
         </Card>
       </div>
 
-      {/* Search and Filter */}
+      {/* Classes List */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>All Classes</CardTitle>
-            <Button variant="outline" size="sm">
-              <Filter className="h-4 w-4 mr-2" />
-              Filter
-            </Button>
-          </div>
+          <CardTitle>All Classes</CardTitle>
+          <CardDescription>
+            {isTrainee
+              ? "Browse available classes and enroll"
+              : "Manage your group fitness classes"}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="mb-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search classes by name or type..."
-                className="pl-9"
-              />
-            </div>
-          </div>
-
-          {/* Class List */}
-          <div className="space-y-4">
-            {classes.map((classItem) => {
-              const isEnrolled = enrolledClassIds.includes(classItem._id);
-              const isFull = classItem.enrolled >= classItem.capacity;
-
-              return (
-                <Card key={classItem._id} className="overflow-hidden">
-                  <div className="flex items-start justify-between p-6">
-                    <div className="flex-1 space-y-3">
-                      <div className="flex items-center gap-3">
-                        <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center">
-                          <Dumbbell className="h-6 w-6 text-primary" />
-                        </div>
-                        <div>
-                          <h3 className="font-semibold text-lg flex items-center gap-2 flex-wrap">
-                            {classItem.name}
-                            {isEnrolled && (
-                              <Badge variant="default" className="text-xs">
-                                Enrolled
-                              </Badge>
-                            )}
-                            {isFull && (
-                              <Badge variant="destructive" className="text-xs">
-                                Full
-                              </Badge>
-                            )}
-                          </h3>
-                          <div className="flex items-center gap-2 mt-1 flex-wrap">
-                            <Badge
-                              className={
-                                typeColors[
-                                  classItem.type as keyof typeof typeColors
-                                ] || "bg-gray-500/10 text-gray-500"
-                              }
-                            >
-                              {classItem.type}
-                            </Badge>
-                            <Badge
-                              className={
-                                levelColors[
-                                  classItem.level as keyof typeof levelColors
-                                ] || "bg-purple-500/10 text-purple-500"
-                              }
-                            >
-                              {classItem.level}
-                            </Badge>
-                          </div>
-                        </div>
-                      </div>
-
-                      <p className="text-sm text-muted-foreground">
-                        {classItem.description}
-                      </p>
-
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2">
-                        <div className="flex items-center gap-2 text-sm">
-                          <Calendar className="h-4 w-4 text-muted-foreground" />
-                          <span>Schedule TBD</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm">
-                          <Clock className="h-4 w-4 text-muted-foreground" />
-                          <span>{classItem.duration} min</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm">
-                          <Users className="h-4 w-4 text-muted-foreground" />
-                          <span>
-                            {classItem.enrolled}/{classItem.capacity} enrolled
-                          </span>
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          Instructor: {classItem.instructorName}
-                        </div>
-                      </div>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {classes.map((classItem) => (
+              <Card
+                key={classItem._id}
+                className="overflow-hidden hover:shadow-md transition-shadow"
+              >
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <CardTitle className="text-lg mb-1">
+                        {classItem.name}
+                      </CardTitle>
+                      <CardDescription>{classItem.type}</CardDescription>
                     </div>
-
-                    <div className="flex-shrink-0 ml-4">
-                      {isTrainee && (
-                        <>
-                          {isEnrolled ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={async () => {
-                                const enrollment = myEnrollments.find(
-                                  (e) => e.classId === classItem._id
-                                );
-                                if (
-                                  enrollment &&
-                                  confirm(`Drop ${classItem.name}?`)
-                                ) {
-                                  try {
-                                    await dropClass({
-                                      enrollmentId: enrollment._id,
-                                    });
-                                    alert("Dropped successfully!");
-                                  } catch (error) {
-                                    console.error(
-                                      "Error dropping class:",
-                                      error
-                                    );
-                                    alert("Failed to drop class");
-                                  }
-                                }
-                              }}
-                            >
-                              Drop Class
-                            </Button>
-                          ) : (
-                            <Button
-                              size="sm"
-                              disabled={isFull}
-                              onClick={async () => {
-                                if (!currentUser) return;
-                                try {
-                                  await enrollInClass({
-                                    traineeId: currentUser._id,
-                                    classId: classItem._id,
-                                  });
-                                  alert(`Enrolled in ${classItem.name}!`);
-                                } catch (error) {
-                                  console.error("Error enrolling:", error);
-                                  alert(
-                                    error instanceof Error
-                                      ? error.message
-                                      : "Failed to enroll"
-                                  );
-                                }
-                              }}
-                            >
-                              {isFull ? "Class Full" : "Enroll"}
-                            </Button>
-                          )}
-                        </>
-                      )}
-
-                      {isAdmin && (
-                        <Button variant="ghost" size="icon">
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Progress Bar */}
-                  <div className="px-6 pb-4">
-                    <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                      <div
-                        className={`h-full ${
-                          isFull ? "bg-destructive" : "bg-primary"
-                        }`}
-                        style={{
-                          width: `${
-                            (classItem.enrolled / classItem.capacity) * 100
-                          }%`,
+                    {isAdmin && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={async () => {
+                          if (confirm(`Delete "${classItem.name}"?`)) {
+                            try {
+                              await deleteClass({
+                                classId: classItem._id,
+                              });
+                              alert("Class deleted!");
+                            } catch (error) {
+                              console.error("Error deleting class:", error);
+                              alert("Failed to delete class");
+                            }
+                          }
                         }}
-                      />
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    )}
+                  </div>
+                  <Badge
+                    className={
+                      difficultyColors[
+                        classItem.difficulty as keyof typeof difficultyColors
+                      ]
+                    }
+                  >
+                    {classItem.difficulty}
+                  </Badge>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-sm text-muted-foreground line-clamp-2">
+                    {classItem.description}
+                  </p>
+
+                  <div className="space-y-2 text-sm border-t pt-3">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-muted-foreground">Schedule:</span>
+                      <span className="font-medium ml-auto">
+                        {classItem.schedule || "TBD"}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-muted-foreground">Duration:</span>
+                      <span className="font-medium ml-auto">
+                        {classItem.duration} min
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-muted-foreground">Enrolled:</span>
+                      <span className="font-medium ml-auto">
+                        {classItem.enrolled || 0}/{classItem.capacity}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <User className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-muted-foreground">Instructor:</span>
+                      <span className="font-medium ml-auto truncate max-w-[120px]">
+                        {classItem.instructorName || "Unknown"}
+                      </span>
                     </div>
                   </div>
-                </Card>
-              );
-            })}
+
+                  {isTrainee && (
+                    <Button
+                      className="w-full mt-3"
+                      variant={
+                        isEnrolled(classItem._id) ? "outline" : "default"
+                      }
+                      onClick={() =>
+                        isEnrolled(classItem._id)
+                          ? handleDrop(classItem._id)
+                          : handleEnroll(classItem._id)
+                      }
+                      disabled={
+                        !isEnrolled(classItem._id) &&
+                        (classItem.enrolled || 0) >= classItem.capacity
+                      }
+                    >
+                      {isEnrolled(classItem._id)
+                        ? "Drop Class"
+                        : (classItem.enrolled || 0) >= classItem.capacity
+                          ? "Class Full"
+                          : "Enroll"}
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
           </div>
 
           {classes.length === 0 && (
-            <div className="text-center py-12 text-muted-foreground">
-              <Dumbbell className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p className="text-lg font-medium">No classes available</p>
-              <p className="text-sm">
+            <div className="text-center py-12">
+              <Users className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
+              <h3 className="mt-4 text-lg font-semibold">
+                No classes available
+              </h3>
+              <p className="text-muted-foreground">
                 {isAdmin
-                  ? "Click 'Add Class' to create your first class"
+                  ? "Create your first class to get started"
                   : "Check back later for new classes"}
               </p>
             </div>

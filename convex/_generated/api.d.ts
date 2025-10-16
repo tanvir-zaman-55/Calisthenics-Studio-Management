@@ -9,6 +9,7 @@
  */
 
 import type * as attendance from "../attendance.js";
+import type * as auth from "../auth.js";
 import type * as classEnrollments from "../classEnrollments.js";
 import type * as classSessions from "../classSessions.js";
 import type * as classes from "../classes.js";
@@ -19,6 +20,7 @@ import type * as test from "../test.js";
 import type * as trainees from "../trainees.js";
 import type * as user from "../user.js";
 import type * as workoutAssignments from "../workoutAssignments.js";
+import type * as workoutLogs from "../workoutLogs.js";
 import type * as workoutTemplates from "../workoutTemplates.js";
 
 import type {
@@ -37,6 +39,7 @@ import type {
  */
 declare const fullApi: ApiFromModules<{
   attendance: typeof attendance;
+  auth: typeof auth;
   classEnrollments: typeof classEnrollments;
   classSessions: typeof classSessions;
   classes: typeof classes;
@@ -47,6 +50,7 @@ declare const fullApi: ApiFromModules<{
   trainees: typeof trainees;
   user: typeof user;
   workoutAssignments: typeof workoutAssignments;
+  workoutLogs: typeof workoutLogs;
   workoutTemplates: typeof workoutTemplates;
 }>;
 declare const fullApiWithMounts: typeof fullApi;
